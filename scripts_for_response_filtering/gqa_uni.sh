@@ -17,7 +17,7 @@ IFS=',' read -ra GPULIST <<< "$gpu_list"
 
 CHUNKS=${#GPULIST[@]}
 
-SPLIT="llava_gqa_testdev_balanced"
+SPLIT="llava_gqa_testdev_balanced_test100"
 GQADIR="$EVAL_DIR/gqa"
 
 MODEL_NAME=$(basename ${MODEL_PATH})

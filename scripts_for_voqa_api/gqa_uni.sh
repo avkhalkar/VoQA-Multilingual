@@ -14,7 +14,7 @@ THREAD_NUM="${11}"
 echo "$MODEL_NAME $METHOD_FOLDER $DIRECTION $EVAL_DIR $FILTER_ANSWER $SPLIT_WORD $MODEL_TYPE $API_KEY $THREAD_NUM"
 echo "prompt $PROMPT prompt_id $PROMPT_ID Start!"
 
-SPLIT="llava_gqa_testdev_balanced"
+SPLIT="llava_gqa_testdev_balanced_test100"
 # SPLIT="llava_gqa_testdev_balanced_for_test"
 GQADIR="$EVAL_DIR/gqa"
 

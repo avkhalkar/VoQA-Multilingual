@@ -11,7 +11,7 @@ TASKS=(scienceqa pope textvqa gqa vqav2)
 # 5. Concatenation directions
 DIRECTIONS=(l r u d)
 # 6. VoQA evaluation dataset path (root path)
-EVAL_DIR="path/to/VoQA/evaluation/dataset"
+EVAL_DIR="/mnt/d/Main/Rnd Projects/VoQA-Multilingual/voqa_gqa/test"
 # 7. Whether the answers will be further carefully filtered (for zero-shot models, default is true; for training models, default is false)
 FILTER_ANSWER="true"
 # 8. Trigger token in the models, which is case-insensitive. Default is ASSISTANT.

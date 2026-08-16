@@ -62,7 +62,7 @@ class CustomDataset(Dataset):
                 elif self.model_name in ['llava-v1.5-7b-Baseline', 'llava-v1.5-7b-QA', 'llava-v1.5-7b-GRT', \
                                         'TinyLLaVA-Qwen2-0.5B-SigLIP-QA', 'TinyLLaVA-Qwen2-0.5B-SigLIP-GRT', \
                                         'TinyLLaVA-Qwen2.5-3B-SigLIP-GRT', 'TinyLLaVA-Qwen2-0.5B-SigLIP-GRT-HELPER', \
-                                        'TinyLLaVA-Qwen2-0.5B-SigLIP-GRT-CAT'] # models which <image> token is not needed.
+                                        'TinyLLaVA-Qwen2-0.5B-SigLIP-GRT-CAT']: # models which <image> token is not needed.
                     qs = '\n' + self.qs
                 else:
                     qs = DEFAULT_IMAGE_TOKEN + '\n' + self.qs
@@ -84,7 +84,7 @@ class CustomDataset(Dataset):
                 elif self.model_name in ['llava-v1.5-7b-Baseline', 'llava-v1.5-7b-QA', 'llava-v1.5-7b-GRT', \
                                         'TinyLLaVA-Qwen2-0.5B-SigLIP-QA', 'TinyLLaVA-Qwen2-0.5B-SigLIP-GRT', \
                                         'TinyLLaVA-Qwen2.5-3B-SigLIP-GRT', 'TinyLLaVA-Qwen2-0.5B-SigLIP-GRT-HELPER', \
-                                        'TinyLLaVA-Qwen2-0.5B-SigLIP-GRT-CAT'] # models which <image> token is not needed.
+                                        'TinyLLaVA-Qwen2-0.5B-SigLIP-GRT-CAT']: # models which <image> token is not needed.
                     qs = '\n' + self.qs
                 else:
                     qs = DEFAULT_IMAGE_TOKEN + '\n' + self.qs

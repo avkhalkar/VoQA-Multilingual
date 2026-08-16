@@ -17,7 +17,7 @@ IFS=',' read -ra GPULIST <<< "$gpu_list"
 
 CHUNKS=${#GPULIST[@]}
 
-SPLIT="llava_gqa_testdev_balanced"
+SPLIT="llava_gqa_testdev_balanced_test100"
 GQADIR="$EVAL_DIR/gqa"
 
 MODEL_NAME=$(basename ${MODEL_PATH})
@@ -25,9 +25,9 @@ MODEL_NAME=$(basename ${MODEL_PATH})
 for IDX in $(seq 0 $((CHUNKS-1))); do
     CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python eval/eval_main.py \
         --model-path $MODEL_PATH \
-        --question-file $EVAL_DIR/gqa/$SPLIT.jsonl \
-        --image-folder $EVAL_DIR/gqa/$METHOD_FOLDER \
-        --answers-file $EVAL_DIR/gqa/answers/${SPLIT}_prompt${PROMPT_ID}/${MODEL_NAME}_${DIRECTION}/$METHOD_FOLDER/${CHUNKS}_${IDX}.jsonl \
+        --question-file "$EVAL_DIR/gqa/$SPLIT.jsonl" \
+        --image-folder "$EVAL_DIR/gqa/$METHOD_FOLDER" \
+        --answers-file "$EVAL_DIR/gqa/answers/${SPLIT}_prompt${PROMPT_ID}/${MODEL_NAME}_${DIRECTION}/$METHOD_FOLDER/${CHUNKS}_${IDX}.jsonl" \
         --num-chunks $CHUNKS \
         --chunk-idx $IDX \
         --temperature 0 \
@@ -41,20 +41,20 @@ done
 
 wait
 
-output_file=$EVAL_DIR/gqa/answers/${SPLIT}_prompt${PROMPT_ID}/${MODEL_NAME}_${DIRECTION}/$METHOD_FOLDER/merge.jsonl
+output_file="$EVAL_DIR/gqa/answers/${SPLIT}_prompt${PROMPT_ID}/${MODEL_NAME}_${DIRECTION}/$METHOD_FOLDER/merge.jsonl"
 
 # Clear out the output file if it exists.
 > "$output_file"
 
 # Loop through the indices and concatenate each file.
 for IDX in $(seq 0 $((CHUNKS-1))); do
-    cat $EVAL_DIR/gqa/answers/${SPLIT}_prompt${PROMPT_ID}/${MODEL_NAME}_${DIRECTION}/$METHOD_FOLDER/${CHUNKS}_${IDX}.jsonl >> "$output_file"
+    cat "$EVAL_DIR/gqa/answers/${SPLIT}_prompt${PROMPT_ID}/${MODEL_NAME}_${DIRECTION}/$METHOD_FOLDER/${CHUNKS}_${IDX}.jsonl" >> "$output_file"
 done
 
-python eval/convert_gqa_for_eval.py --src $output_file --dst $GQADIR/answers/${SPLIT}_prompt${PROMPT_ID}/${MODEL_NAME}_${DIRECTION}/$METHOD_FOLDER/testdev_balanced_predictions.json \
+python eval/convert_gqa_for_eval.py --src "$output_file" --dst "$GQADIR/answers/${SPLIT}_prompt${PROMPT_ID}/${MODEL_NAME}_${DIRECTION}/$METHOD_FOLDER/testdev_balanced_predictions.json" \
     --filter_answer $FILTER_ANSWER \
     --split_word $SPLIT_WORD \
     --model_type $MODEL_TYPE
 
-cd $GQADIR
-python eval/eval.py --tier testdev_balanced --predictions answers/${SPLIT}_prompt${PROMPT_ID}/${MODEL_NAME}_${DIRECTION}/$METHOD_FOLDER/testdev_balanced_predictions.json
+cd "$GQADIR"
+python eval/eval.py --tier testdev_balanced_test100 --predictions "answers/${SPLIT}_prompt${PROMPT_ID}/${MODEL_NAME}_${DIRECTION}/$METHOD_FOLDER/testdev_balanced_predictions.json"

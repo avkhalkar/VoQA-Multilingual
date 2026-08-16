@@ -5,7 +5,7 @@ MODEL_PATHS=(Zhang199/TinyLLaVA-Qwen2-0.5B-SigLIP tinyllava/TinyLLaVA-Phi-2-SigL
 # 2. Traditional VQA evaluation tasks
 TASKS=(scienceqa pope textvqa gqa vqav2)
 # 3. VQA dataset path (root path)
-EVAL_DIR="path/to/VoQA/evaluation/dataset"
+EVAL_DIR="/mnt/d/Main/Rnd Projects/VoQA-Multilingual/voqa_gqa/test"
 # 4. Initialize the conda environment, which is ready for step 5 below (about line 15).
 # (Just for an example. Adjust the path according to the actual situation of your computer).
 source /opt/miniconda3/etc/profile.d/conda.sh

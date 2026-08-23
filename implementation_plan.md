@@ -111,6 +111,10 @@ VoQA-Multilingual/
 #### [NEW] [evaluate_multilingual.py](file:///d:/Main/Rnd_Projects/VoQA-Multilingual/src/eval/evaluate_multilingual.py)
 - **Translates model predictions back to English** using SeamlessM4T (to accommodate English-only heuristics).
 - Reuses `eval/process_answer.py` for response filtering on the translated text.
+- **Metrics Calculated**:
+  1. **Strict Exact Match Accuracy**: The primary metric. Because we translate the answer back to English, we can directly reuse the VoQA synonyms/stemming logic without maintaining five different language parsers.
+  2. **Validity**: Retained from GQA to ensure answers fall within expected types (yes/no, color, object, etc.).
+  3. **Relaxed Semantic Similarity (F1/BERTScore)**: *New addition*. Because Latin-script languages (Italian, Spanish) are morphologically richer than English, the back-translation might yield valid synonyms not caught by the hardcoded strict match (e.g. translating 'automóvil' to 'automobile' instead of 'car'). A fast embedding metric like BERTScore ensures we catch semantically correct answers that miss the strict match.
 - Outputs summary table to `experiments/zero_shot_pilot_1k/metrics_summary.json`
 
 ---
@@ -168,3 +172,15 @@ VoQA-Multilingual/
 - Visually inspect 2–3 rendered watermark images per language to verify text readability, positioning, and Unicode correctness
 - Verify that the summary table shows non-trivial accuracy (comparable to English-only results)
 - Confirm predictions JSONL files have correct format for downstream analysis
+
+---
+
+## Implementation Progress Checklist
+
+- [x] Phase 1 — Codebase Inspection & Architecture Layout
+- [x] Phase 2 — 1K Subset Selection (Data Prep)
+- [ ] Phase 3 — Translation Pipeline (Adapter & Execution)
+- [ ] Phase 4 — Multilingual Watermark Renderer
+- [ ] Phase 5 — Model Inference (InternVL-1B WSL Pipeline)
+- [ ] Phase 6 — Evaluation Parsing (Back-Translation & Semantic Textual Similarity)
+- [ ] Phase 7 — Final Experiment Artifacts (Logs, Summary Tables, README)

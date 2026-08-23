@@ -2,3 +2,12 @@
 /voqa_gqa/
 /Miniconda3-latest-Linux-x86_64.sh
 /LLeQAMultilingualDatasetAndCode
+/data_multilingual/
+/experiments/
+/CHEATSHEET.md
+src/data_prep/NotoSans-Bold.ttf
+src/__pycache__
+implementation_plan.md
+/Detailed_VOQA.pdf
+/tools/smoke_test_output
+/voqa_gqa.zip

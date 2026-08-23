@@ -1,0 +1,3243 @@
+VoQA: Visual-only Question Answering
+Jianing An1, Luyang Jiang1, Jie Luo1, Wenjun Wu1,2, Lei Huang1,2, B
+1SKLCCSE, School of Artificial Intelligence, Beihang University, Beijing, China
+2Hangzhou International Innovation Institute, Beihang University, Hangzhou, China
+{anjianing, luyang.jiang, luojie, wwj09315, huangleiAI}@buaa.edu.cn
+Abstract
+Visual understanding requires interpreting both natu-
+ral scenes and the textual information that appears within
+them, motivating tasks such as Visual Question Answer-
+ing (VQA). However, current VQA benchmarks overlook
+scenarios with visually embedded questions, whereas ad-
+vanced agents should be able to see the question without
+separate text input as humans. We introduce Visual-only
+Question Answering (VoQA), where both the scene and the
+question appear within a single image, requiring models to
+perceive and reason purely through vision. This setting sup-
+ports more realistic visual understanding and interaction in
+scenarios where questions or instructions are embedded di-
+rectly in the visual scene. Evaluations under pure visual-
+only zero-shot, prompt-guided and OCR-assisted settings
+show that current models exhibit a clear performance drop
+compared to traditional VQA. To address this, we investi-
+gate question-alignment fine-tuning strategies designed to
+guide models toward interpreting the visual question prior
+to reasoning. Leveraging VoQA dataset together with these
+strategies yields robust vision-only reasoning while preserv-
+ing cross-task generalization to traditional VQA, reflecting
+the complementary visual and textual reasoning capabili-
+ties fostered through VoQA training. The code3 and data4
+are publicly available.
+1. Introduction
+Visual understanding is a core capability in both human per-
+ception and artificial intelligence systems, including com-
+prehension of natural scenes and interpretation of visual
+scenarios with embedded textual cues. Research in mul-
+timodal reasoning has largely been driven by the Visual
+Question Answering (VQA) [3, 9] task, where a model re-
+BCorresponding author.
+3https://github.com/AJN-AI/VoQA
+4https://huggingface.co/datasets/AJN-AI/VoQA
+Figure 1. Comparison between (a) the traditional VQA task and
+(b) the Visual-only Question Answering (VoQA) task. Traditional
+VQA provides an image and a textual question as separate inputs,
+whereas VoQA embeds the question directly within the image, re-
+quiring reasoning purely through visual perception.
+ceives an image together with an explicitly provided textual
+question and is required to produce an answer. This for-
+mulation has enabled systematic evaluation of visual rea-
+soning and the development of a wide range of bench-
+marks [12, 22, 23, 27] and models.
+Fueled by advances in Large Vision-Language Models
+(LVLMs) [1, 2, 5, 15, 18], recent models have achieved no-
+table results on various VQA benchmarks. However, cur-
+rent VQA benchmarks ignore cases where questions are
+embedded within the visual scene, yet advanced agents
+should be able to directly see and interpret such questions
+without relying on separate textual input, similar to human
+perception. Such situations commonly occur in natural en-
+vironments, digital interfaces, and many embodied AI set-
+tings. In these cases, models must detect, interpret, and rea-
+son over visually embedded text without relying on sepa-
+rate textual inputs. Developing the ability to handle these
+scenarios allows embodied AI systems, including robots,
+autonomous vehicles, and graphical user interface (GUI)
+agents, to interact more efficiently and naturally with real-
+world environments.
+This paper introduces Visual-only Question Answering
+(VoQA), a new multimodal reasoning task that removes
+1
+arXiv:2505.14227v2  [cs.CV]  30 Nov 2025
+
+the explicit language channel. As shown in Figure 1, the
+model receives a single composite image that visually en-
+codes both the question and the scene. It must comprehend
+the embedded question, align it with the corresponding vi-
+sual content, and generate the correct answer, all through
+a unified visual input stream. This reframing moves from
+explicit language-conditioned reasoning in VQA to implicit
+vision-only reasoning in VoQA, where the model must infer
+and answer questions purely from visual cues.
+To support this task,
+we construct a large-scale
+VoQA Dataset and a comprehensive VoQA Benchmark,
+containing over 3.35M training and 134k evaluation
+samples.
+The training set is derived by converting
+LLaVA [18] instruction-tuning data into visual-only inputs
+via text–image rendering. For evaluation, the benchmark
+is built by converting existing VQA datasets into the same
+visual-only format, covering tasks adapted from VQAv2,
+GQA, POPE [16], TextVQA, and ScienceQA.
+To assess model capabilities without modifying their
+weights, We evaluate both open-source and closed-source
+LVLMs under pure visual-only zero-shot, prompt-guided,
+and OCR-assisted experiments, revealing a substantial per-
+formance drop compared to traditional VQA. Under pure
+visual-only zero-shot settings, most models fail to correctly
+interpret and answer visually embedded questions, often
+merely repeating the question or even generating image cap-
+tion unrelated to the embedded question. Analysis using
+the Question Alignment Accuracy (QAA, see Section 3.3.3)
+further confirms that correctly aligning visual questions is
+crucial, as higher QAA consistently correlates with better
+answer accuracy. This finding highlights that effective rea-
+soning depends critically on question alignment, which in-
+volves the ability to locate and interpret visual text, motivat-
+ing supervised fine-tuning (SFT) strategies that guide mod-
+els to first identify and align with the embedded question
+before producing an answer.
+We conducted a comprehensive investigation of SFT
+strategies. For VoQA Baseline-SFT (see Section 4.1), we
+found that models often either repeat the embedded ques-
+tion or generate answers unrelated to it, reflecting poor
+alignment between visual prompts and the intended re-
+sponse. To address this limitation, we introduce question-
+alignment fine-tuning strategies that guide the model to first
+identify the visual question before reasoning, effectively en-
+hancing its ability to comprehend visually embedded ques-
+tions and perform reasoning purely within the visual modal-
+ity.
+Given the inherent difficulty of the VoQA task, it is de-
+sirable for the model to not only perform well on VoQA
+but also acquire cross-task generation capability (see Sec-
+tion 4.2) to traditional VQA. Among these strategies, Ques-
+tion–Role–Answer Supervised Fine-Tuning (QRA-SFT, see
+Section 4.3) guides the model to predict the complete Ques-
+tion–Role–Answer sequence, which both enforces prior
+alignment with the visually embedded question, ensuring
+strong performance on the VoQA task, and preserves the
+input-output format of traditional VQA, thereby maintain-
+ing the model’s ability to generalize to text-based VQA.
+2. Related Works
+2.1. Visual Question Answering
+Early Visual Question Answering (VQA) research focused
+on object recognition and basic reasoning over static im-
+ages, as in VQAv1 [3], VQAv2 [9], and CLEVR [13], while
+datasets such as Visual7W [39], GQA [12], and VizWiz-
+VQA [10] expanded to region grounding, compositional
+reasoning, and real-world robustness. Subsequent work ex-
+plored bias analysis [14], external knowledge [23], and mul-
+tilingual or large-scale benchmarks such as MMBench [19]
+and MEGA-Bench [7].
+To evaluate text understanding,
+TextVQA [27], OCR-VQA [25], and ChartQA [24] eval-
+uate models’ ability to read and reason over scene text or
+structured data.
+Although these methods vary and explore different as-
+pects of multimodal capabilities, they all provide the ques-
+tion as a separate textual input. In contrast, our VoQA task
+embeds the question as rendered text within the image, re-
+quiring unifying perception, text recognition, and reasoning
+without any explicit textual prompt.
+2.2. Large Vision-Language Models
+Large Vision-Language Models (LVLMs) bridge vision and
+language via large-scale pretraining on image–text pairs.
+Early works such as CLIP [26] and SigLIP [35] estab-
+lished strong cross-modal alignment, while recent sys-
+tems combine vision encoders with Large Language Mod-
+els (LLMs) [1, 2, 15, 18, 37], enabling unified multi-
+modal reasoning across captioning and VQA. Representa-
+tive open-source models such as Qwen3-VL [5], and In-
+ternVL3.5 [30] achieve performance comparable to propri-
+etary systems like GPT-5 and Gemini2.5-Pro.
+Despite their progress, most LVLMs still depend on ex-
+plicit textual input for perception and reasoning.
+Their
+reliance on language priors leaves open the question of
+whether multimodal understanding can emerge purely from
+the visual channel when textual information is embedded
+within the image itself.
+2.3. OCR Systems and OCR-Enhanced LVLMs
+Traditional OCR systems (e.g., Tesseract [28]) follow a
+modular detect–recognize pipeline, which limits robustness
+in complex or noisy scenes.
+Recent Transformer-based
+approaches such as Nougat [6], GOT-OCR2.0 [31], and
+DeepSeek-OCR [32] pursue unified end-to-end designs, ex-
+tending OCR to structured documents, formulas, and di-
+agrams. Recent LVLMs demonstrate emergent OCR-like
+capabilities through instruction-tuned multimodal pretrain-
+2
+
+ing [4, 5, 30, 38], yet they remain dependent on vision-
+language instruction tuning.
+In contrast, our VoQA task removes textual input en-
+tirely, embedding questions visually within the image. This
+setting moves beyond text recognition, requiring models
+to both perceive and reason over in-image textual content
+purely through the visual modality.
+3. VoQA Task, Dataset and Benchmark
+We first introduce the VoQA task along with the VoQA
+dataset and benchmark designed for it. To investigate the
+model capability on this task, we evaluate both open-source
+and closed-source models across multiple settings.
+3.1. Task Definition
+The Visual-only Question Answering (VoQA) task is de-
+fined as a visual reasoning problem in which all informa-
+tion required for inference, including both visual content
+and textual semantics, is conveyed solely through the vi-
+sual modality. Formally, let I denote the space of natu-
+ral images, and T denote the space of textual sequences.
+In VoQA, the input to the model is a composite visual in-
+put Iv ∈Iv ⊂RH×W ×3, which visually encodes both
+Is ∈I (scene image) and Tq ∈T (question text). Given
+this visual-only input, a reasoning function M : Iv →Ta
+produces an answer ˆTa = M(Iv). This formulation ab-
+stracts VoQA as a unified visual reasoning task where both
+the scene and the query are presented within a single visual
+stream, and all semantic inference is performed in the visual
+space without explicit textual input.
+3.2. Dataset Construction
+To build the VoQA dataset and benchmark, we introduce the
+text-image rendering methods used to generate visual-only
+inputs and the data sources used for training and evaluation.
+3.2.1. Text-Image Rendering Methods
+Given a scene image Is and a textual question Tq, to gener-
+ate the composite image Iv in the VoQA task, we first con-
+vert Tq into RGB-format images Iq of size 224 × 224 using
+the DejaVuSans-Bold font. These rendered images are inte-
+grated with the original visual images via two strategies:
+(1) Concatenation. We concatenate Iq and Is either by
+resizing or padding to align their shapes, keeping textual
+and visual information separate. This setup serves as an
+intermediate task between traditional VQA and the fully
+integrated Watermark Rendering approach described next.
+Concatenation details and related experiments are provided
+in Appendix A.1.
+All other experiments use Watermark
+Rendering, which embeds questions directly within images,
+better reflecting real-world visual-question scenarios.
+(2) Watermark Rendering (Figure 2). To enable more
+integrated visual-textual understanding, we render Iq as a
+watermark within the scene image Is.
+Inspired by the
+Figure 2. Two examples of watermark rendering with different
+text colors.
+sliding window approach, we select the embedding region
+based on multiple criteria to ensure minimal occlusion and
+maximal readability. Final watermark colors are selected
+based on WCAG contrast guidelines. Technical details, in-
+cluding candidate region scoring, contrast-aware color se-
+lection, are provided in Appendix A.2.
+3.2.2. Data Preparation
+Training Dataset.
+We construct the VoQA training
+dataset based on the vision–language instruction-tuning
+data released by LLaVA [18]. Each multi-turn dialogue is
+split into individual question–answer pairs, and each pair is
+rendered as a separate composite image by overlaying the
+question onto the corresponding scene image. The resulting
+dataset comprises over 3.35 million VoQA samples.
+Evaluation Benchmark.
+We build the VoQA Bench-
+mark by transforming five widely-used VQA datasets,
+VQAv2 [9], GQA [12], POPE [16], TextVQA [27], and
+ScienceQA-IMG [22] (denoted as SQA), into the visual-
+only format.
+Each image–question pair is rendered into
+a single composite image using our text–image rendering
+process. The benchmark spans a broad range of question
+types and reasoning skills, and includes over 134k evalua-
+tion samples. Details of each sub-task are provided in Ap-
+pendix A.3.
+3.3. Evaluation on the VoQA Benchmark
+We evaluate both open-source and closed-source models on
+traditional VQA benchmarks as baseline performance and
+on the VoQA benchmark under three main settings: (1) pure
+visual-only zero-shot, (2) prompt-guided evaluation, where
+models are explicitly instructed to reconstruct and answer
+the visually embedded question, and (3) OCR-assisted eval-
+uation, where a strong OCR system provides auxiliary tex-
+tual input.
+3.3.1. Evaluation Setup
+Overview of Evaluation Settings.
+We evaluate seven
+LVLMs, including six open-source models: InternVL3-
+1B [38], DeepSeek-VL2-Tiny (1B) [33], Qwen2.5-VL-3B-
+Instruct [5], TinyLLaVA-3.1B [36], BLIP-3 (4B) [34], and
+LLaVA-v1.5-7B [18], as well as the closed-source model
+3
+
+Figure 3. Average Accuracy (%) of all models on the VoQA benchmark under various zero-shot settings (pure visual-only, prompt-
+guided, and OCR-assisted) across all datasets, compared with traditional VQA benchmarks. The models correspond to those introduced in
+Section 3.3.1. Across all models and zero-shot settings, performance on VoQA is noticeably lower than on traditional VQA, highlighting
+the challenge of reasoning over visually embedded questions. Detailed results on each dataset are provided in Appendix B.3.
+Doubao-1.5-thinking-vision-pro.
+All models are evalu-
+ated under four settings: (1) traditional VQA benchmarks;
+(2) the VoQA benchmark under a pure visual-only zero-
+shot setting, where models receive only images with visu-
+ally embedded questions; (3) the VoQA benchmark with
+prompt-guided evaluation, where prompts explicitly in-
+struct the model to locate and interpret the embedded ques-
+tion before answering; and (4) the VoQA benchmark with
+OCR-assisted evaluation, where the OCR output from a
+strong system (GOT-OCR 2.0 [31]) is provided as auxiliary
+textual input together with the composite image.
+Prompt Engineering Setup.
+We design three prompting
+configurations (see Appendix B.1 for templates): (1) Light
+Prompt, which briefly instructs the model to locate and an-
+swer the embedded question; (2) Short Workflow Prompt,
+which adds minimal reasoning guidance and requires struc-
+tured JSON outputs containing both the detected question
+and final answer; (3) Long Workflow Prompt, which fur-
+ther enforces multi-step reasoning and stricter output con-
+straints to ensure stronger question alignment.
+To ensure fair comparison, we apply consistent response
+filtering across all VoQA settings. Details of the implemen-
+tation are provided in Appendix B.2.
+3.3.2. Evaluation Results
+As shown in Figure 3, performance of all models drops sig-
+nificantly on pure visual-only zero-shot VoQA compared
+with traditional VQA, highlighting the challenge of reason-
+ing over visually embedded questions, even for the closed-
+source Doubao model.
+Under prompt-guided evaluation, models achieve mod-
+erate gains by explicitly parsing the embedded question.
+Incorporating OCR results, as an external auxiliary system
+that directly provides the model with the detected embedded
+question, achieves the highest accuracy among all VoQA
+settings. Nevertheless, performance remains noticeably be-
+low traditional VQA, indicating that current LVLMs still
+struggle when textual information is presented solely in the
+visual modality.
+Notably, the closed-source Doubao model performs rel-
+atively well, likely due to its large size and extensive pre-
+training, which help it interpret visual questions even with-
+out specialized guidance.
+3.3.3. Result Analysis
+Model behavior Analysis.
+To better understand model
+behaviors under the pure visual-only zero-shot setting, we
+categorize their responses to the VoQA task into five types:
+(1) Question-unaware image captioning:
+ignores the
+embedded question and generates a generic caption; (2)
+Question-aware image captioning: partially recognizes
+the question and produces a loosely related description; (3)
+Repeating the question: restates the question without an-
+swering; (4) Answering incorrectly: identifies the ques-
+tion but gives a wrong or irrelevant answer; (5) Answering
+correctly: accurately understands and answers the embed-
+ded question. We show a representative example in Table
+1, which refers to a road construction scene that requires
+understanding both the overall context and multiple text-
+rich elements such as warning signs and road symbols. In
+this case, most models fail to produce meaningful answers.
+Instead, they tend to either repeat the question or generate
+image descriptions without giving responses.
+Question Recognition Analysis.
+To analyze the perfor-
+mance gap, we measure models’ performance in recogniz-
+ing the visually embedded question. We define Question
+Alignment Accuracy (QAA) as:
+QAA = 1 −min(EditDistance(ˆq, q))
+len(q)
+,
+(1)
+4
+
+Table 1. A representative example from the pure visual-only zero-shot VoQA benchmark, showing a visually embedded question and
+comparing responses from different models. The question ”Where will these things eventually be seen? Answer the question using a single
+word or phrase.” is asked about a road construction site. The models correspond to those introduced in Section 3.3.1. Note: ellipses in
+some model outputs are manually added for brevity and do not affect the classification of behavior type.
+Input
+Model
+Response
+Behavior Type
+LLaVA (7B)
+The image features a construction site with several road
+signs and barricades. There are ...
+Question-unaware image captioning
+InternVL (1B)
+The text in the image suggests that the question ”where will
+these things eventually be? Answer ... phrase.” is used to
+refer to road construction. The related sign ...
+Question-aware image captioning
+TinyLLaVA (3.1B)
+The image captures a scene of road construction ... The im-
+age also includes a text that reads ”WHERE WILL THESE
+THINGS EVENLY BE ...”
+Question-aware image captioning
+DeepSeek (1B)
+Where will these things eventually be seen? Answer the ques-
+tion using a single word or phrase.
+Repeating the question
+BLIP (4B)
+The text ’Where will these things eventually be seen? Answer
+... phrase.’ is overlaid on the image.
+Repeating the question
+Qwen (3B)
+Disappeared
+Answering incorrectly
+Doubao
+road
+Answering correctly
+Figure 4. Average Question Alignment Accuracy (QAA) and An-
+swer Accuracy (ACC) for all models across four VoQA sub-tasks
+under the two workflow prompt settings, except VQAv2. Cor-
+rect Answers and Incorrect Answers indicate averages computed
+over correctly and incorrectly answered samples, respectively. The
+models correspond to those introduced in Section 3.3.1. For each
+model, the results shown correspond to the workflow setting (short
+or long) that yields the higher average ACC. Complete QAA and
+ACC results are provided in Appendix B.3.
+where q is the ground-truth question, ˆq is the model-
+predicted question, and EditDistance counts the character-
+level insertions, deletions, or substitutions to match the
+strings. This metric measures how accurately a model iden-
+tifies the question before reasoning.
+We compute the Question Alignment Accuracy (QAA)
+on the VoQA benchmark, reporting results by reasoning
+correctness for GQA, POPE, and SQA, and by confi-
+dence threshold (not less than 0.5) for TextVQA, exclud-
+ing VQAv2 due to unavailable correctness labels. QAA is
+calculated under both workflow prompt.
+As shown in Figure 4, higher QAA generally corre-
+lates with stronger reasoning performance, as correctly an-
+swered samples consistently exhibit higher QAA than in-
+correct ones. However, a high QAA does not always guar-
+antee higher answer accuracy (e.g., Deepseek and Qwen),
+likely because these models have not yet learned the rea-
+soning pattern of first identifying the embedded question
+and then generating an answer based on it. Incorporating
+an external OCR system provides direct access to the em-
+bedded question and achieves the highest VoQA accuracy,
+but performance still falls short of traditional VQA due to
+challenges like interfering text.
+Overall, these observations highlight that robust VoQA
+reasoning requires effective question localization and un-
+derstanding, highlighting the critical role of supervised fine-
+tuning in teaching the model to first recognize the question
+and then generate the answer, as follows in the next section.
+4. Question-Alignment Fine-Tuning for VoQA
+By Supervised Fine-Tuning (SFT) on instruction–response
+pairs from the VoQA training data, models are expected to
+better recognize embedded questions and reason over visual
+content, building on the proven effectiveness of prior SFT
+frameworks [8, 18, 37]. We first introduce its standard ap-
+plication in traditional VQA.
+VQA Baseline-SFT (denoted as VQA SFT).
+In the tra-
+ditional VQA setting, the model is fine-tuned with both the
+image and the textual question as inputs, using the corre-
+sponding answer as supervision (Figure 5, Line 1). This
+straightforward strategy enables the model to learn visual-
+text reasoning conditioned on an explicitly provided ques-
+tion.
+However, due to the difference in input formats between
+traditional VQA and VoQA, the VQA fine-tuning approach
+must be adapted when applied to the VoQA task.
+4.1. Naive SFT Adaptation to VoQA
+VoQA Baseline-SFT.
+In VoQA Baseline-SFT, the explicit
+textual question is removed, and the model generates the
+answer directly from a composite image Iv that visually
+5
+
+Figure 5. Comparison of four supervised fine-tuning strategies. The first two represent baseline fine-tuning under the VQA and VoQA
+settings, respectively. The bottom two are our proposed VoQA-specific methods that first align the visually embedded question before
+generating the answer.
+Figure 6. Comparison of average accuracy on the VoQA bench-
+mark between zero-shot evaluation and VoQA Baseline-SFT fine-
+tuned models. Detailed results for each dataset are provided in
+Appendix C.3.
+embeds the question (Figure 5, Line 2), preserving the
+basic fine-tuning structure.
+Subsequent experiments use
+three base models: TinyLLaVA-1B-Pretrained, InternVL3-
+1B-Pretrained, and Qwen2-VL-2B. For details of experi-
+mental settings, please refer to Appendix C.1
+Result Analysis.
+As shown in Figure 6, VoQA Baseline-
+SFT moderately improves model performance over zero-
+shot evaluation on the VoQA task. However, we further
+observe that the model frequently struggles to interpret the
+embedded question correctly: it may repetitively restate the
+question without answering, or generate responses that are
+semantically irrelevant (See Appendix C.2 for examples).
+These behaviors reveal a fundamental limitation: without
+explicit textual guidance, answer-only supervision is insuf-
+ficient for the model to align its instruction-following be-
+havior with visually embedded questions.
+4.2. Enhancing Supervised Fine-Tuning with Ques-
+tion Alignment
+To address the limitations observed with Baseline-SFT, we
+introduce an explicit question alignment strategy to improve
+reasoning over visually embedded questions.
+QA-SFT.
+We propose Question–Answer Supervised Fine-
+Tuning (QA-SFT, Figure 5, Line 3), which incorporates a
+question reconstruction objective, supervising both the re-
+Figure 7. Evaluation of models fine-tuned with different strate-
+gies.
+(a) Average VoQA performance of VoQA Baseline-SFT
+and VoQA QA-SFT models. (b) Average traditional VQA per-
+formance of VQA Baseline-SFT and VoQA QA-SFT models. All
+models are fine-tuned on either the LLaVA instruction-following
+dataset (for VQA) or the VoQA dataset (for VoQA), with differ-
+ences only in input presentation. The base models correspond to
+the three models shown in Section 4.1. Horizontal lines denote the
+mean performance across three models under each setting. De-
+tailed results for each dataset are provided in Appendix C.3.
+constructed question and its answer. This guides the model
+to first extract the embedded question before reasoning,
+thereby enforcing question–answer alignment and improv-
+ing the connection between visual understanding and rea-
+soning. As shown in Figure 7 (a), QA-SFT consistently
+improves average performance over VoQA Baseline-SFT
+across all models, indicating that aligning the model with
+the visually embedded question helps enhance reasoning.
+Cross-task Generation to Traditional VQA.
+Consider-
+ing that VoQA is an inherently challenging task, we fur-
+ther investigate whether QA-SFT enables models to ac-
+quire cross-task generation capability—namely, the capac-
+ity to generalize acquired reasoning skills beyond the spe-
+cific training setting. To assess this ability, we evaluate QA-
+SFT models on the traditional VQA task, where questions
+are provided in text rather than visually embedded. As VQA
+and VoQA share the same question–answering objective but
+6
+
+Table 2. Performance comparison of fine-tuning strategies on the
+VoQA benchmark. Results for VoQA QA-SFT and QRA-SFT are
+reported, with both models based on the same pre-trained back-
+bone. All results are reported in accuracy (%).
+Base Model
+Settings
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+TinyLLaVA (1B)
+QA-SFT
+70.0
+49.8
+84.1
+37.4
+36.9
+55.6
+QRA-SFT
+69.6
+49.5
+83.8
+37.1
+38.2
+55.6
+InternVL (1B)
+QA-SFT
+73.2
+53.0
+86.6
+53.7
+42.5
+61.8
+QRA-SFT
+72.6
+52.7
+85.8
+56.3
+49.1
+63.3
+Qwen (2B)
+QA-SFT
+79.2
+60.1
+87.6
+70.8
+60.6
+71.7
+QRA-SFT
+78.1
+60.5
+88.0
+70.8
+60.5
+71.6
+differ in input modality, this evaluation serves as a natural
+test of cross-task generalization and provides a simpler set-
+ting to isolate the model’s visual understanding capability.
+As shown in Figure 7, QA-SFT models perform signifi-
+cantly worse on traditional VQA than models fine-tuned un-
+der the standard VQA SFT setting, and in some cases even
+underperform their VoQA results. These findings indicate
+that while QA-SFT strengthens visual question alignment
+in VoQA, it exhibits limited cross-task generation capabil-
+ity toward traditional VQA.
+Structure Misalignment.
+Although QA-SFT enhances
+alignment with visually embedded questions in VoQA, its
+input–output structure differs from traditional VQA fine-
+tuning. In VQA SFT, the textual question is explicitly pro-
+vided before the role token (ASSISTANT:), giving the model
+a clear reasoning context. In contrast, QA-SFT treats the
+question as part of the generated output after the role to-
+ken. This structural discrepancy may cause the model to
+misalign its reasoning or produce inaccurate answers when
+facing the traditional VQA format, leading to limited gen-
+eralization to traditional VQA tasks.
+4.3.
+Enhancing
+Cross-Task
+Generalization
+in
+Question-Alignment Fine-Tuning
+Building on question-alignment fine-tuning, we propose a
+strategy that explicitly separates question parsing from an-
+swer generation while preserving the traditional VQA for-
+mat, ensuring strong alignment with visually embedded
+questions in VoQA and enhanced cross-task generalization
+to VQA compared with QA-SFT.
+QRA-SFT.
+We propose Question–Role–Answer Super-
+vised Fine-Tuning (QRA-SFT, Figure 5, Line 4). In QRA-
+SFT, the model sequentially generates the predicted ques-
+tion, a role token, and the answer. This output design mir-
+rors the traditional VQA input format, keeping compatibil-
+ity while explicitly enforcing question parsing before an-
+swering. In addition, the output sequence follows a struc-
+tured Question–Role–Answer format, helping the model
+separate question interpretation from answer generation by
+predicting the role token during inference.
+Figure 8. Evaluation of models fine-tuned with different strate-
+gies. (a) Average QAA results of VoQA QRA-SFT models on
+correctly and incorrectly answered samples across the four VoQA
+sub-tasks, excluding VQAv2. (b) Average traditional VQA ACC
+of VQA Baseline-SFT, VoQA Baseline-SFT, and VoQA QA-SFT
+models. The fine-tuning strategies and base models are consistent
+with those in Figure 7. Horizontal lines denote the mean perfor-
+mance across three models under each setting. Detailed results for
+each dataset are provided in Appendix C.3.
+4.3.1. Evaluation on VoQA and Cross-Task VQA Gener-
+alization
+Effectiveness on VoQA.
+As shown in Table 2, QRA-SFT
+matches or slightly outperforms QA-SFT, demonstrating
+that explicit supervision of question interpretation preserves
+alignment with visually embedded questions. Figure 8 (a)
+further shows that correctly answered samples consistently
+exhibit higher QAA than incorrect ones, exceeding 95%
+on average across the three models, suggesting that strong
+question–answer alignment underlies the improved VoQA
+performance.
+Generalization to VQA.
+Figure 8 (b) shows that mod-
+els fine-tuned with QRA-SFT generalize substantially better
+to traditional VQA than those trained with QA-SFT. Their
+performance approaches that of models fine-tuned directly
+on VQA SFT, indicating that QRA-SFT improves question
+alignment in VoQA while also supporting cross-task gener-
+alization to traditional VQA.
+4.3.2. Token Activation Map Visualization
+To further illustrate how QRA-SFT improves the model’s
+reasoning process, we employ the Token Activation Map
+(TAM) [17] technique to visualize token-level attentions on
+VoQA samples. Figure 9 shows the comparison between
+the InternVL3 model and the QRA-SFT fine-tuned model.
+In Figure 9 (a), we present the original input image, where
+the question text is embedded in the visual scene. Figure 9
+(b) shows the visualization results of the InternVL3 model.
+We observe that the model does not explicitly attend to the
+question area in the image, leading to a misunderstanding
+of the question and an incorrect answer. In contrast, Fig-
+ures 9 (c) and (d) show the QRA-SFT model’s visualization
+results, where the model first focuses on the textual region
+7
+
+Figure 9. Token Activation Map (TAM) visualization results. (a) Original VoQA input image. (b) Visualization of the InternVL3 model.
+(c–d) Visualization of the QRA-SFT model. The QRA-SFT model first attends to the textual question region and subsequently to the
+relevant visual area (the hat), demonstrating a more structured reasoning process. Note: In TAM visualizations, the text below each image
+represents the sequence of generated tokens. The token currently being visualized is highlighted with a black box. The brightness of the
+overlay indicates attention strength, brighter areas correspond to higher attention on the corresponding token or image region.
+Table 3. Influence of role token format and content on VoQA per-
+formance. All results are reported in accuracy (%).
+Model
+Role Token
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+InternVL (1B)
+ASSISTANT:
+73.0
+52.3
+86.2
+55.4
+56.4
+64.6
+\nassistant\n
+72.6
+52.7
+85.8
+56.3
+49.1
+63.3
+TinyLLaVA (1B)
+ASSISTANT:
+69.6
+49.5
+83.8
+37.1
+38.2
+55.6
+HELPER:
+69.7
+49.6
+83.7
+36.8
+36.9
+55.3
+CAT:
+69.4
+49.3
+83.6
+36.9
+36.6
+55.2
+containing the question, then shifts its attention to the rele-
+vant visual region (the man’s hat) when generating the final
+answer. These results indicate that QRA-SFT effectively
+guides the model to perform step-wise reasoning: first un-
+derstanding the question text within the image, and then lo-
+cating the visual evidence to produce the correct answer.
+4.3.3. Ablation Study
+Impact of Role Token Design.
+We further analyze the
+effect of role token form and semantics in QRA-SFT. As
+shown in Table 3, different token formats (e.g., ASSISTANT:
+vs. others) and contents (e.g., ASSISTANT vs. HELPER)
+yield nearly identical results, suggesting that the role token
+mainly acts as a weak structural separator to stabilize for-
+matting rather than providing semantic guidance.
+Impact of Vision Encoders on VoQA.
+We compare two
+vision encoders under identical fine-tuning pipelines to iso-
+late their effect on performance and visual–text alignment.
+For each vision encoder, the corresponding model is fine-
+tuned separately on the LLaVA instruction-tuning dataset
+(for VQA SFT) and the VoQA dataset. As shown in Fig-
+ure 10, both encoders perform similarly on traditional VQA,
+indicating comparable general visual features. On VoQA,
+however, SigLIP outperforms CLIP by over 15%, empha-
+sizing the importance of stronger visual grounding and text-
+sensitive representations for interpreting embedded ques-
+Figure 10. Impact of visual encoders on VQA and VoQA tasks.
+TinyLLaVA-1B-Pretrained originally uses SigLIP (siglip-so400m-
+patch14-384) as its vision encoder. We also pretrain it with CLIP
+(clip-vit-large-patch14-336) under identical fine-tuning settings.
+We report ACC on both VQA and VoQA, and QAA on VoQA.
+Horizontal lines denote the mean performance across all sub-tasks
+under each setting.
+tions. Consistently, models with higher QAA on VoQA also
+achieve better accuracy, confirming that visual–text align-
+ment remains a main bottleneck in this task.
+5. Conclusion
+In this work, we present VoQA, a vision-only reasoning task
+designed to advance robust understanding and interaction
+in real-world visual scenes where textual questions are em-
+bedded directly in the image. To support this task, we build
+the VoQA Dataset and VoQA Benchmark, revealing a sub-
+stantial gap between human perception and current multi-
+modal models under vision-only conditions. Furthermore,
+our study of question-alignment fine-tuning demonstrates
+that QRA-SFT not only markedly enhances VoQA perfor-
+mance but also preserves strong cross-task generalization
+to traditional VQA tasks. Together, these contributions es-
+8
+
+tablish VoQA as a practical and insightful testbed for future
+research on unified visual reasoning.
+Limitations and Future Work.
+Our experiments are
+limited to small-scale LVLMs due to computational con-
+straints, though the proposed strategies are model-agnostic
+and readily scalable.
+Future directions include applying
+QRA-SFT to larger backbones, exploring diverse visual text
+styles and multilingual scenarios, and extending VoQA to
+embodied or interactive environments.
+Acknowledgments
+This work was partially supported by the National Science
+and Technology Major Project (2022ZD0116310), National
+Natural Science Foundation of China (Grant No. 62476016
+and 62441617), the Fundamental Research Funds for the
+Central Universities.
+References
+[1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ah-
+mad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida,
+Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al.
+Gpt-4 technical report.
+arXiv preprint arXiv:2303.08774,
+2023. 1, 2
+[2] Jean-Baptiste Alayrac, Jeff Donahue, Pauline Luc, Antoine
+Miech, Iain Barr, Yana Hasson, Karel Lenc, Arthur Men-
+sch, Katherine Millican, Malcolm Reynolds, et al. Flamingo:
+a visual language model for few-shot learning.
+Advances
+in neural information processing systems, 35:23716–23736,
+2022. 1, 2
+[3] Stanislaw Antol, Aishwarya Agrawal, Jiasen Lu, Margaret
+Mitchell, Dhruv Batra, C Lawrence Zitnick, and Devi Parikh.
+Vqa: Visual question answering. In Proceedings of the IEEE
+international conference on computer vision, pages 2425–
+2433, 2015. 1, 2
+[4] Jinze Bai, Shuai Bai, Shusheng Yang, Shijie Wang, Sinan
+Tan, Peng Wang, Junyang Lin, Chang Zhou, and Jingren
+Zhou. Qwen-vl: A versatile vision-language model for un-
+derstanding, localization, text reading, and beyond. arXiv
+preprint arXiv:2308.12966, 2023. 3
+[5] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin
+Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun
+Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhao-
+hai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren
+Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen
+Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Jun-
+yang Lin.
+Qwen2.5-vl technical report.
+arXiv preprint
+arXiv:2502.13923, 2025. 1, 2, 3
+[6] Lukas Blecher, Guillem Cucurull, Thomas Scialom, and
+Robert Stojnic. Nougat: Neural optical understanding for
+academic documents, 2023. 2
+[7] Jiacheng Chen, Tianhao Liang, Sherman Siu, Zhengqing
+Wang, Kai Wang, Yubo Wang, Yuansheng Ni, Wang Zhu,
+Ziyan Jiang, Bohan Lyu, Dongfu Jiang, Xuan He, Yuan Liu,
+Hexiang Hu, Xiang Yue, and Wenhu Chen. Mega-bench:
+Scaling multimodal evaluation to over 500 real-world tasks,
+2024. 2
+[8] Wenliang Dai, Junnan Li, Dongxu Li, Anthony Meng Huat
+Tiong, Junqi Zhao, Weisheng Wang, Boyang Li, Pascale
+Fung, and Steven Hoi.
+Instructblip:
+Towards general-
+purpose vision-language models with instruction tuning,
+2023. 5
+[9] Yash Goyal, Tejas Khot, Douglas Summers-Stay, Dhruv Ba-
+tra, and Devi Parikh. Making the v in vqa matter: Elevating
+the role of image understanding in visual question answer-
+ing.
+In Proceedings of the IEEE conference on computer
+vision and pattern recognition, pages 6904–6913, 2017. 1,
+2, 3
+[10] Danna Gurari, Qing Li, Abigale J Stangl, Anhong Guo, Chi
+Lin, Kristen Grauman, Jiebo Luo, and Jeffrey P Bigham.
+Vizwiz grand challenge: Answering visual questions from
+blind people.
+In Proceedings of the IEEE conference on
+computer vision and pattern recognition, pages 3608–3617,
+2018. 2
+[11] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-
+Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al.
+Lora: Low-rank adaptation of large language models. ICLR,
+1(2):3, 2022. 18
+[12] Drew A Hudson and Christopher D Manning. Gqa: A new
+dataset for real-world visual reasoning and compositional
+question answering. In Proceedings of the IEEE/CVF con-
+ference on computer vision and pattern recognition, pages
+6700–6709, 2019. 1, 2, 3
+[13] Justin
+Johnson,
+Bharath
+Hariharan,
+Laurens
+Van
+Der Maaten, Li Fei-Fei, C Lawrence Zitnick, and Ross
+Girshick.
+Clevr: A diagnostic dataset for compositional
+language and elementary visual reasoning. In Proceedings
+of the IEEE conference on computer vision and pattern
+recognition, pages 2901–2910, 2017. 2
+[14] Kushal Kafle and Christopher Kanan. An analysis of visual
+question answering algorithms. In Proceedings of the IEEE
+international conference on computer vision, pages 1965–
+1973, 2017. 2
+[15] Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi.
+Blip-2:
+Bootstrapping language-image pre-training with
+frozen image encoders and large language models. In In-
+ternational conference on machine learning, pages 19730–
+19742. PMLR, 2023. 1, 2
+[16] Yifan Li, Yifan Du, Kun Zhou, Jinpeng Wang, Wayne Xin
+Zhao, and Ji-Rong Wen.
+Evaluating object hallucina-
+tion in large vision-language models.
+arXiv preprint
+arXiv:2305.10355, 2023. 2, 3
+[17] Yi Li, Hualiang Wang, Xinpeng Ding, Haonan Wang, and
+Xiaomeng Li. Token activation map to visually explain mul-
+timodal llms, 2025. 7
+[18] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee.
+Visual instruction tuning. Advances in neural information
+processing systems, 36:34892–34916, 2023. 1, 2, 3, 5
+[19] Yuan Liu, Haodong Duan, Yuanhan Zhang, Bo Li, Songyang
+Zhang, Wangbo Zhao, Yike Yuan, Jiaqi Wang, Conghui He,
+Ziwei Liu, Kai Chen, and Dahua Lin. Mmbench: Is your
+multi-modal model an all-around player?, 2024. 2
+[20] Ilya Loshchilov and Frank Hutter.
+Decoupled weight de-
+cay regularization. In International Conference on Learning
+Representations. 18
+9
+
+[21] Ilya Loshchilov and Frank Hutter. Sgdr: Stochastic gradient
+descent with warm restarts, 2017. 18
+[22] Pan Lu, Swaroop Mishra, Tanglin Xia, Liang Qiu, Kai-Wei
+Chang, Song-Chun Zhu, Oyvind Tafjord, Peter Clark, and
+Ashwin Kalyan. Learn to explain: Multimodal reasoning via
+thought chains for science question answering.
+Advances
+in Neural Information Processing Systems, 35:2507–2521,
+2022. 1, 3
+[23] Kenneth Marino, Mohammad Rastegari, Ali Farhadi, and
+Roozbeh Mottaghi. Ok-vqa: A visual question answering
+benchmark requiring external knowledge.
+In Proceedings
+of the IEEE/cvf conference on computer vision and pattern
+recognition, pages 3195–3204, 2019. 1, 2
+[24] Ahmed Masry, Do Xuan Long, Jia Qing Tan, Shafiq Joty,
+and Enamul Hoque. Chartqa: A benchmark for question an-
+swering about charts with visual and logical reasoning. arXiv
+preprint arXiv:2203.10244, 2022. 2
+[25] Anand Mishra, Shashank Shekhar, Ajeet Kumar Singh, and
+Anirban Chakraborty. Ocr-vqa: Visual question answering
+by reading text in images. In 2019 international conference
+on document analysis and recognition (ICDAR), pages 947–
+952. IEEE, 2019. 2
+[26] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya
+Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry,
+Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning
+transferable visual models from natural language supervi-
+sion. In International conference on machine learning, pages
+8748–8763. PmLR, 2021. 2
+[27] Amanpreet Singh, Vivek Natarjan, Meet Shah, Yu Jiang,
+Xinlei Chen, Devi Parikh, and Marcus Rohrbach. Towards
+vqa models that can read. In Proceedings of the IEEE Con-
+ference on Computer Vision and Pattern Recognition, pages
+8317–8326, 2019. 1, 2, 3
+[28] R. Smith. An overview of the tesseract ocr engine. In Ninth
+International Conference on Document Analysis and Recog-
+nition (ICDAR 2007), pages 629–633, 2007. 2
+[29] Michael Tschannen, Basil Mustafa, and Neil Houlsby.
+Clippo:
+Image-and-language understanding from pixels
+only. In Proceedings of the IEEE/CVF Conference on Com-
+puter Vision and Pattern Recognition, pages 11006–11017,
+2023. 11
+[30] Weiyun Wang, Zhangwei Gao, Lixin Gu, Hengjun Pu, Long
+Cui, Xingguang Wei, Zhaoyang Liu, Linglin Jing, Sheng-
+long Ye, Jie Shao, et al. Internvl3.5: Advancing open-source
+multimodal models in versatility, reasoning, and efficiency.
+arXiv preprint arXiv:2508.18265, 2025. 2, 3
+[31] Haoran Wei, Chenglong Liu, Jinyue Chen, Jia Wang, Lingyu
+Kong, Yanming Xu, Zheng Ge, Liang Zhao, Jianjian Sun,
+Yuang Peng, et al. General ocr theory: Towards ocr-2.0 via a
+unified end-to-end model. arXiv preprint arXiv:2409.01704,
+2024. 2, 4
+[32] Haoran Wei, Yaofeng Sun, and Yukun Li.
+Deepseek-
+ocr:
+Contexts optical compression.
+arXiv preprint
+arXiv:2510.18234, 2025. 2
+[33] Zhiyu Wu, Xiaokang Chen, Zizheng Pan, Xingchao Liu,
+Wen Liu, Damai Dai, Huazuo Gao, Yiyang Ma, Chengyue
+Wu, Bingxuan Wang, et al.
+Deepseek-vl2: Mixture-of-
+experts vision-language models for advanced multimodal
+understanding. arXiv preprint arXiv:2412.10302, 2024. 3
+[34] Le Xue, Manli Shu, Anas Awadalla, Jun Wang, An Yan,
+Senthil Purushwalkam, Honglu Zhou, Viraj Prabhu, Yu-
+tong Dai, Michael S Ryoo, et al.
+xgen-mm (blip-3): A
+family of open large multimodal models.
+arXiv preprint
+arXiv:2408.08872, 2024. 3
+[35] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and
+Lucas Beyer. Sigmoid loss for language image pre-training.
+In Proceedings of the IEEE/CVF international conference on
+computer vision, pages 11975–11986, 2023. 2
+[36] Baichuan Zhou, Ying Hu, Xi Weng, Junlong Jia, Jie Luo,
+Xien Liu, Ji Wu, and Lei Huang. Tinyllava: A framework of
+small-scale large multimodal models, 2024. 3
+[37] Deyao Zhu, Jun Chen, Xiaoqian Shen, Xiang Li, and Mo-
+hamed Elhoseiny.
+Minigpt-4: Enhancing vision-language
+understanding with advanced large language models. arXiv
+preprint arXiv:2304.10592, 2023. 2, 5
+[38] Jinguo Zhu, Weiyun Wang, Zhe Chen, Zhaoyang Liu, Shen-
+glong Ye, Lixin Gu, Hao Tian, Yuchen Duan, Weijie Su,
+Jie Shao, et al. Internvl3: Exploring advanced training and
+test-time recipes for open-source multimodal models. arXiv
+preprint arXiv:2504.10479, 2025. 3
+[39] Yuke Zhu, Oliver Groth, Michael Bernstein, and Li Fei-Fei.
+Visual7w: Grounded question answering in images. In Pro-
+ceedings of the IEEE conference on computer vision and pat-
+tern recognition, pages 4995–5004, 2016. 2
+10
+
+VoQA: Visual-only Question Answering
+Supplementary Material
+A. Dataset Construction
+A.1. Concatenation Methods and Results
+Concatenation Process.
+Following CLIPPO [29], we
+first try to concatenate the scene image Is with the rendered
+text image Iq. Considering the difference of side lengths
+between Is and Iq, we use two concatenation methods with
+different effects, and also take into account the four relative
+positions of the textual question on the top, bottom, left and
+right of the composite image.
+For the concatenation method without resizing (Fig-
+ure A1, left), we align the center of the two images and
+fill in the blank space with the padding of the white back-
+ground. For the concatenation method with resizing (Fig-
+ure A1, right), we fix the larger size in Is and Iq, and enlarge
+the smaller size to the same side length.
+Experiments.
+We first explored concatenation as a sim-
+ple baseline, which performed better than watermark ren-
+dering thanks to its fixed layout and clean background. We
+averaged results across four concatenation directions for
+each method and evaluated model performance in three set-
+tings: the traditional VQA task, the pure visual-only VoQA
+task, and the VoQA task with Light Prompt (as described
+in Section B.1). Results are shown in Table A1 and Ta-
+ble A2. Even under this simplified setup, where the scene
+image and the embedded question are completely separated,
+models still struggle to perform well. The effect of Light
+Prompt also varies across models, sometimes improving
+but sometimes reducing performance. Overall, both con-
+catenation methods outperform watermark rendering in the
+pure visual-only setting, consistent with their simpler visual
+composition.
+A.2. Details of Watermark Rendering Method
+We first identify the most suitable region for rendering the
+watermark to minimize the impact of poor text readability.
+The watermark’s side length is set to 1/4 of the short side
+of the scene image Is. To balance efficiency and quality,
+candidate regions are generated using a stride of 1/4 the im-
+age side length. Each region is scored based on gradient,
+variance, and contrast (weighted 0.4, 0.4, and 0.2, respec-
+tively), reflecting smoothness and color contrast to ensure
+readability.
+Next, we determine the watermark color in HSV space
+based on the average hue, saturation, and value of the se-
+lected region. The hue is set to the complementary hue (off-
+set by 180° on the color wheel). If the saturation exceeds
+200, the watermark saturation is set to 0.8 times that of the
+region; otherwise, it is set to the maximum value of 255.
+Figure A1. Examples of concatenation methods, showing bottom
+concatenation without resizing (left) and left / right concatenation
+with resizing (right).
+The value (brightness) is inverted: if the region’s value ex-
+ceeds 127, the watermark value is set to 0; otherwise, 255.
+Finally, we render Iq onto Is. Following the WCAG
+standard5, if the contrast ratio between the watermark and
+background exceeds 4.5, we retain the computed color; oth-
+erwise, we choose either black or white, selecting the one
+with greater contrast.
+A.3. Details of VoQA Benchmark
+We remove reference OCR tokens from the TextVQA ques-
+tions to prevent excessively long text from reducing font
+size and interfering with the question information already
+present in the image. To ensure visual clarity, we filter out
+overly long questions in SQA to avoid unreadable text re-
+gions.
+Our benchmark includes three question types: open-
+ended questions (VQAv2, GQA, TextVQA), binary ques-
+tions (POPE), and multiple-choice questions (SQA, with
+A/B/C/D options embedded directly in the images). The fi-
+nal number of evaluation samples retained for each dataset
+is 107,394 (VQAv2), 12,578 (GQA), 8,910 (POPE), 5,000
+(TextVQA), and 1,087 (SQA).
+5https://www.w3.org/Translations/WCAG21-zh/
+11
+
+Table A1. Evaluation results of concatenation method without resizing. We evaluate four open-source models under three settings—the tra-
+ditional VQA task, the pure visual-only VoQA task, and the VoQA task with Light Prompt. Each result is averaged over four concatenation
+directions. All results are reported in accuracy (%). Although the image content and embedding questions are presented separately, which
+helps maintain visual consistency, the model’s performance still drops significantly compared to the traditional VQA setup, highlighting
+the inherent difficulties of VoQA.
+Model
+Settings
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+InternVL2.5-1B
+Traditional VQA
+76.3
+56.9
+89.9
+72.0
+96.7
+78.4
+VoQA zero-shot
+4.1
+3.0
+54.9
+15.3
+4.1
+16.3
+Light Prompt
+35.8
+20.1
+65.8
+43.7
+17.5
+36.6
+DeepSeek-VL2-Tiny
+Traditional VQA
+83.5
+62.7
+88.6
+79.2
+94.3
+81.7
+VoQA zero-shot
+9.3
+4.5
+71.1
+31.2
+40.3
+31.3
+Light Prompt
+8.3
+4.0
+54.0
+4.3
+6.7
+15.5
+Qwen2.5-VL-3B-Instruct
+Traditional VQA
+82.0
+60.1
+88.2
+79.0
+84.9
+78.8
+VoQA zero-shot
+70.7
+47.9
+81.2
+65.4
+69.2
+66.9
+Light Prompt
+25.1
+15.9
+80.9
+38.6
+32.8
+38.6
+BLIP-3 (4B)
+Traditional VQA
+81.7
+61.6
+87.0
+71.0
+89.8
+78.2
+VoQA zero-shot
+10.1
+5.8
+53.6
+16.4
+26.2
+22.4
+Light Prompt
+11.7
+8.6
+61.5
+15.6
+6.3
+20.8
+Table A2. Evaluation results of concatenation method with resizing. Experiment settings are identical to those in Table A1, except for the
+difference in the concatenation method used during data construction. All results are reported in accuracy (%). Despite the simpler setup
+compared to watermark rendering, all models still show a significant performance drop relative to traditional VQA.
+Model
+Settings
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+InternVL2.5-1B
+Traditional VQA
+76.3
+56.9
+89.9
+72.0
+96.7
+78.4
+VoQA zero-shot
+4.8
+2.7
+54.6
+14.4
+5.8
+16.5
+Light Prompt
+35.2
+21.0
+68.2
+42.9
+16.0
+36.6
+DeepSeek-VL2-Tiny
+Traditional VQA
+83.5
+62.7
+88.6
+79.2
+94.3
+81.7
+VoQA zero-shot
+11.0
+5.6
+69.9
+36.4
+40.7
+32.7
+Light Prompt
+11.9
+6.6
+57.4
+3.9
+6.8
+17.3
+Qwen2.5-VL-3B-Instruct
+Traditional VQA
+82.0
+60.1
+88.2
+79.0
+84.9
+78.8
+VoQA zero-shot
+69.2
+45.4
+80.6
+60.9
+72.7
+65.8
+Light Prompt
+24.1
+15.2
+80.2
+30.4
+47.6
+39.5
+BLIP-3 (4B)
+Traditional VQA
+81.7
+61.6
+87.0
+71.0
+89.8
+78.2
+VoQA zero-shot
+10.6
+7.6
+53.6
+17.7
+26.6
+23.2
+Light Prompt
+15.3
+10.3
+55.6
+16.4
+7.9
+21.1
+12
+
+B. LVLM Evaluation Settings and Results
+B.1. Examples of Designed Prompts
+Light Prompt.
+We explore a series of carefully designed
+light prompts to guide the model in performing the VoQA
+task under a zero-shot setting. By analyzing the impact of
+different key phrases in the prompts, we identify the most
+effective formulation.
+Table A3 summarizes the various
+prompt designs and highlights their key instructional com-
+ponents.
+Short
+Workflow
+Prompt.
+This
+prompt
+guides
+the model through image analysis,
+ensuring it ex-
+tracts the question, understands its context, and pro-
+vides a precise answer based on visual cues.
+The
+placeholders
+<bbox>,
+<top-left-location>,
+<bottom-right-location>, <picture-width>
+and <picture-height> are replaced by the actual
+question location and image dimensions, derived from the
+dataset generation process. The model is required to output
+the result in a strict JSON format, ensuring consistency
+and enabling automated processing. Prompt content is as
+follows:
+Task Definition:
+You will receive an image with a
+watermark question.
+Your task is to:
+1.
+Detect and extract the full
+question text.
+2.
+Locate the question bounding box
+<bbox> (top-left <top-left-location>,
+bottom-right <bottom-right-location>)
+in the <picture-width>x<picture-height>
+image.
+3.
+Understand the question type.
+4.
+Answer accurately based only on the
+visual content.
+Output Format (strict JSON):
+{
+"Detected Question":
+"<recognized
+question text>",
+"Answer":
+"<concise answer based on
+the image>",
+"Reasoning":
+"<brief explanation of
+how the answer was derived>"
+}
+Important:
+- Ensure full and coherent question
+extraction.
+- Base the answer strictly on visual
+evidence.
+- If uncertain or unclear, output
+"Unknown".
+- Do not add commentary outside the
+JSON.
+Now, analyze the image, detect the
+question and its location, and output
+the result in the required JSON
+format.
+Long Workflow Prompt.
+The Long Workflow Prompt
+offers a more detailed step-by-step process compared
+to the Short Workflow Prompt.
+It includes tasks like
+watermark question detection, visual information extrac-
+tion, and answer generation.
+However, both work-
+flow prompts share the same setup regarding place-
+holders, such as <bbox>, <top-left-location>,
+<bottom-right-location>, <picture-width>
+and <picture-height>, which are replaced by the ac-
+tual question location and image dimensions based on the
+dataset generation process.
+While the Short Workflow Prompt is more concise, the
+Long Workflow Prompt provides more structured guidance,
+ensuring that the model follows a clear workflow for ac-
+curate answers based solely on the visual content. Prompt
+content is as follows:
+(1) Task Definition:
+You will receive an image containing a
+watermark-embedded question.
+Your task
+is to:
+1.
+Detect the full question text
+embedded as a watermark in the image.
+2.
+Understand the meaning of the
+question.
+3.
+Answer the question based solely on
+the visual content of the image.
+4.
+Provide an accurate and relevant
+answer.
+(2) Workflow Steps:
+Step 1:
+Watermark Question Detection
+- Scan the image for textual content,
+including semi-transparent overlays and
+repeated patterns.
+- Extract the complete question
+sentence.
+- Tip:
+The question is located at
+bounding box <bbox>, from top-left
+<top-left-location> to bottom-right
+<bottom-right-location> in a
+<picture-width>x<picture-height> image.
+Step 2:
+Visual Information Extraction
+- Analyze the image to find information
+13
+
+Table A3. Light prompt design variants for zero-shot VoQA. Each prompt aims to instruct the model to first locate the embedded question
+in the image and then generate an answer based solely on the visual content. Key phrases used in the prompts are listed to highlight their
+instructional focus. The first prompt is the one ultimately adopted for our light prompt evaluations.
+Designed prompts
+Key phrases
+There is a question in this image, you need to find the question and answer
+the question based on the visual information of the entire image. (Ours)
+find the question, answer the ques-
+tion, the visual information
+There is a question in this image. You need to find the question and answer the
+question based on the visual information of the entire image. Please do not repeat
+the question and answer it directly.
+find the question, answer the ques-
+tion, the visual information, do not
+repeat the question, answer it di-
+rectly
+Please answer the question in the image directly, and do not repeat the question.
+You need to find the answer based on the visual information of the entire image.
+answer the question directly, do not
+repeat the question, the visual infor-
+mation
+Please answer the question in the image directly, and do not repeat the question.
+answer the question, do not repeat
+the question
+Please find the question in the image, and answer it directly based on the whole
+image.
+find the question, answer it directly
+Please find the question in the image, and answer it directly based on the whole
+image. Do not repeat the question.
+find the question, answer it directly,
+do not repeat the question
+Please find the question in the image and answer it based on the image. Do not
+repeat the question you find in your answers.
+find the question, answer it, do not
+repeat the question
+relevant to the question.
+- Focus on object recognition,
+counting, attribute description,
+spatial relations, scene understanding,
+text recognition, or reasoning as
+needed.
+Step 3:
+Answer Generation
+- Provide an accurate, concise answer
+based solely on visual evidence.
+- Give a brief explanation of how the
+answer was derived.
+- If the answer cannot be determined,
+state it honestly.
+(3) Output Format (JSON):
+Strictly return a valid JSON object as
+shown below:
+{
+"Detected Question":
+"<recognized
+question text>",
+"Answer":
+"<concise answer based on
+the image>",
+"Reasoning":
+"<brief explanation of
+how the answer was derived>"
+}
+Example:
+{
+"Detected Question":
+"What is the
+brand of this camera?",
+"Answer":
+"Canon",
+"Reasoning":
+"The text ’Canon’ is
+clearly visible on the camera body."
+}
+(4) Important Notes:
+1.
+Ensure question detection and
+answer are grounded in the image.
+2.
+Provide the full, coherent question
+text.
+3.
+Base the answer strictly on visual
+evidence.
+4.
+Be concise and clear.
+5.
+State uncertainty clearly if the
+image lacks information.
+Now, process the input image and
+execute the VoQA task following the
+above workflow.
+B.2. Response Filtering Method
+To fairly evaluate model performance on the VoQA Bench-
+mark, we apply standardized response filtering, since mod-
+els may produce answers in varying formats, while the
+benchmark datasets require concise responses, typically a
+single letter, word, or phrase.
+For zero-shot and few-shot (see section B.4) mod-
+els, we adopt multiple parsing strategies to extract the
+actual answer from the response.
+These include for-
+mats such as The answer is [Actual Answer] or
+Answer:
+[Actual Answer]. Dataset-specific rules
+14
+
+Table A4. Performance comparison between traditional VQA and VoQA under several zero-shot settings for VoQA. The evaluation includes
+six open-source models and two closed-source models. All results are reported in accuracy (%).
+Model
+Benchmark
+Setting
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+InternVL3-1B
+Traditional VQA
+/
+71.8
+52.1
+88.8
+71.8
+95.4
+76.0
+VoQA
+pure zero-shot
+5.5
+3.2
+53.9
+12.8
+19.5
+19.0
+light prompt
+14.6
+9.2
+57.8
+19.0
+18.0
+23.7
+short workflow prompt
+13.6
+7.6
+53.6
+26.5
+23.6
+25.0
+long workflow prompt
+16.8
+10.0
+59.9
+30.8
+18.9
+27.3
+OCR-assisted
+45.3
+29.4
+63.3
+31.5
+45.7
+43.0
+DeepSeek-VL2-Tiny (1B)
+Traditional VQA
+/
+83.5
+62.7
+88.6
+79.2
+94.3
+81.7
+VoQA
+pure zero-shot
+2.0
+0.2
+59.3
+21.7
+32.0
+23.1
+light prompt
+7.5
+3.7
+57.0
+6.4
+18.0
+18.5
+short workflow prompt
+35.1
+21.5
+58.5
+48.7
+39.3
+40.6
+long workflow prompt
+8.3
+5.2
+53.1
+4.9
+4.5
+15.2
+OCR-assisted
+69.1
+44.7
+82.3
+41.3
+52.9
+58.1
+Qwen2.5-VL-3B-Instruct
+Traditional VQA
+/
+82.0
+60.1
+88.2
+79.0
+84.9
+78.8
+VoQA
+pure zero-shot
+57.4
+35.0
+76.3
+60.7
+61.2
+58.1
+light prompt
+40.1
+26.9
+71.0
+37.1
+56.2
+46.3
+short workflow prompt
+57.0
+36.9
+55.7
+64.9
+66.2
+56.1
+long workflow prompt
+69.9
+45.7
+80.0
+66.6
+61.2
+64.7
+OCR-assisted
+68.0
+47.8
+84.2
+58.7
+70.9
+65.9
+TinyLLaVA-3.1B
+Traditional VQA
+/
+80.1
+62.1
+87.2
+55.9
+75.5
+72.2
+VoQA
+pure zero-shot
+0.8
+0.2
+50.5
+4.5
+6.7
+12.6
+light prompt
+46.0
+22.2
+71.6
+31.8
+12.7
+36.9
+short workflow prompt
+41.4
+25.0
+65.2
+28.3
+11.9
+34.3
+long workflow prompt
+28.8
+16.2
+59.9
+12.3
+6.0
+24.6
+OCR-assisted
+70.0
+51.8
+71.4
+46.3
+47.9
+57.5
+BLIP-3 (4B)
+Traditional VQA
+/
+81.7
+61.6
+87.0
+71.0
+89.8
+78.2
+VoQA
+pure zero-shot
+7.3
+2.7
+49.7
+16.2
+29.1
+21.0
+light prompt
+11.5
+13.3
+58.0
+11.3
+18.8
+22.5
+short workflow prompt
+65.7
+42.7
+80.1
+54.3
+37.4
+56.0
+long workflow prompt
+63.9
+40.3
+79.6
+50.7
+28.6
+52.6
+OCR-assisted
+68.6
+46.4
+79.3
+57.1
+50.1
+60.3
+LLaVA-v1.5-7B
+Traditional VQA
+/
+78.5
+62.0
+85.9
+46.1
+73.7
+69.2
+VoQA
+pure zero-shot
+0.2
+0
+50.5
+3.5
+1.5
+11.1
+light prompt
+13.7
+9.3
+55.0
+2.9
+4.1
+17.0
+short workflow prompt
+36.4
+18.4
+60.3
+22.6
+6.2
+28.8
+long workflow prompt
+38.1
+18.4
+62.1
+21.5
+3.6
+28.7
+OCR-assisted
+71.9
+55.1
+74.7
+44.2
+39.0
+57.0
+Doubao-1.5-thinking-vision-pro
+Traditional VQA
+/
+82.7
+61.7
+89.1
+82.1
+96.9
+82.5
+VoQA
+pure zero-shot
+75.7
+49.1
+86.2
+78.1
+77.6
+73.3
+light prompt
+77.0
+49.7
+86.2
+78.2
+77.6
+73.8
+short workflow prompt
+78.3
+52.5
+86.6
+79.0
+82.3
+75.8
+long workflow prompt
+78.9
+53.3
+86.5
+79.5
+81.2
+75.9
+OCR-assisted
+79.5
+55.1
+87.7
+78.8
+86.0
+77.4
+GPT-4o
+Traditional VQA
+/
+72.5
+51.3
+86.5
+75.2
+90.7
+75.2
+VoQA
+pure zero-shot
+70.5
+48.3
+85.7
+69.4
+78.3
+70.4
+are also considered.
+For instance, POPE only evaluates
+whether the response contains no or not, so when the ex-
+act answer location is uncertain, we retain the full sentence
+to preserve contextual clues.
+For experiments using JSON-formatted outputs (includ-
+ing long/short workflow prompt and few-shot settings), we
+first check whether the model’s response is in valid JSON
+format. If so, we parse the JSON and extract the value of the
+ANSWER field as the candidate answer; otherwise, we retain
+the original output. Finally, we apply the multi-strategy fil-
+tering approach described above to obtain the final answer.
+For fine-tuned models, filtering strategies vary depend-
+ing on the fine-tuning approach. For all models fine-tuned
+using Baseline-SFT, we retain the original output.
+For
+QRA-SFT, we extract the segment following the last occur-
+rence of a role token as the answer. Specifically for QA-
+SFT, where responses often follow a Question + Answer
+format, we directly use the last sentence as the final pre-
+dicted answer.
+15
+
+Table A5. QAA and ACC Results under short workflow settings.
+Model
+Metric
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+InternVL (1B)
+QAA(Correct)
+92.4
+87.4
+92.6
+66.6
+84.7
+QAA(Incorrect)
+83.8
+87.2
+76.1
+55.4
+75.6
+ACC
+7.6
+53.6
+26.5
+23.6
+27.8
+DeepSeek (1B)
+QAA(Correct)
+99.2
+99.3
+98.6
+80.5
+94.4
+QAA(Incorrect)
+98.9
+99.3
+95.2
+69.4
+90.7
+ACC
+21.5
+58.5
+48.7
+39.3
+42.0
+Qwen (3B)
+QAA(Correct)
+59.4
+61.1
+79.0
+53.8
+63.3
+QAA(Incorrect)
+59.1
+57.5
+78.3
+47.1
+60.5
+ACC
+36.9
+55.7
+64.9
+66.2
+55.9
+TinyLLaVA (3.1B)
+QAA(Correct)
+34.9
+52.8
+21.2
+31.2
+35.0
+QAA(Incorrect)
+24.8
+45.5
+13.2
+16.2
+24.9
+ACC
+25.0
+65.2
+28.3
+11.9
+32.6
+BLIP (4B)
+QAA(Correct)
+86.4
+93.2
+86.3
+73.1
+84.7
+QAA(Incorrect)
+79.1
+91.6
+64.4
+55.3
+72.6
+ACC
+42.7
+80.1
+54.3
+37.4
+53.6
+LLaVA (7B)
+QAA(Correct)
+38.7
+36.0
+37.5
+40.0
+38.0
+QAA(Incorrect)
+35.9
+36.7
+34.2
+26.3
+33.3
+ACC
+18.4
+60.3
+22.6
+6.2
+26.9
+Doubao
+QAA(Correct)
+94.3
+98.1
+99.5
+57.6
+87.4
+QAA(Incorrect)
+93.6
+97.3
+98.9
+50.9
+85.2
+ACC
+52.5
+86.6
+79.0
+82.8
+75.2
+B.3. Zero-shot Evaluation Results
+Detailed ACC Results for Zero-shot Evaluation.
+The
+complete results of the traditional VQA benchmarks and
+the VoQA zero-shot evaluation across different settings are
+summarized in Table A4. All sub-datasets show a clear and
+consistent performance degradation on VoQA, highlighting
+the increased complexity and distinct challenges posed by
+the VoQA task.
+QAA and ACC under Workflow-based Prompt-Guided
+Evaluation.
+As shown in Table A5 and Table A6, across
+most sub-tasks, models exhibit higher QAA on correctly
+answered samples than on incorrect ones, indicating that
+recognizing the embedded question is a prerequisite for re-
+liable reasoning. Moreover, in the majority of sub-tasks,
+higher QAA correlates with higher ACC, further reinforc-
+ing the importance of accurate question understanding.
+B.4. Few-shot Evaluation
+To help models learn the task pattern from examples, we
+incorporate few-shot settings into our prompt-engineering
+experiments.
+We evaluate three open-source LVLMs
+(InternVL3-1B, Qwen2.5-VL-3B-Instruct,
+and BLIP-3
+(4B)) in a few-shot setting, providing k ∈{1, 2, 4, 8} ran-
+domly sampled examples from the VoQA training dataset.
+Each example follows a JSON format containing the ques-
+tion and answer.
+Few-shot settings.
+We randomly sampled 10,000 in-
+stances from the VoQA training set to construct a demon-
+stration pool. To ensure balanced coverage, the sampling
+process was stratified according to the proportion of sam-
+ples from different sub-tasks in the training data. For each
+Table A6. QAA and ACC Results under long workflow settings.
+Model
+Metric
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+InternVL (1B)
+QAA(Correct)
+89.0
+82.9
+89.8
+65.4
+81.8
+QAA(Incorrect)
+79.2
+80.7
+71.7
+45.9
+69.4
+ACC
+10.0
+59.9
+30.8
+18.9
+29.9
+DeepSeek (1B)
+QAA(Correct)
+57.0
+4.5
+2.2
+0.9
+16.1
+QAA(Incorrect)
+3.9
+4.0
+0.4
+1.8
+2.5
+ACC
+5.2
+53.1
+4.9
+4.5
+16.9
+Qwen (3B)
+QAA(Correct)
+66.2
+63.8
+63.9
+55.0
+62.2
+QAA(Incorrect)
+64.6
+64.0
+63.7
+44.7
+59.3
+ACC
+45.7
+80.0
+66.6
+61.2
+63.4
+TinyLLaVA (3.1B)
+QAA(Correct)
+4.2
+3.9
+6.0
+0
+3.5
+QAA(Incorrect)
+2.8
+2.6
+4.0
+1.1
+2.6
+ACC
+16.2
+59.9
+12.3
+6.0
+23.6
+BLIP (4B)
+QAA(Correct)
+81.0
+89.6
+64.5
+68.9
+76.0
+QAA(Incorrect)
+65.4
+86.9
+45.8
+44.1
+60.5
+ACC
+40.3
+79.6
+50.7
+28.6
+49.8
+LLaVA (7B)
+QAA(Correct)
+37.4
+34.6
+35.0
+34.5
+35.4
+QAA(Incorrect)
+33.2
+32.6
+31.5
+22.6
+30.0
+ACC
+18.4
+62.1
+21.5
+3.6
+26.4
+Doubao
+QAA(Correct)
+94.5
+97.7
+98.9
+63.8
+88.7
+QAA(Incorrect)
+93.4
+97.1
+98.4
+50.1
+84.8
+ACC
+53.3
+86.5
+79.5
+81.2
+75.1
+of the 134k evaluation samples, we randomly selected 1, 2,
+4, or 8 examples from this pool as few-shot demonstrations.
+Once selected, the examples were fixed to ensure consistent
+comparison across models and reproducibility of results.
+Each selected example’s image, embedded question text,
+and corresponding answer were inserted into the following
+prompt template (shown below using the 2-shot setting as
+an example). In this template, the placeholders <Ground
+Truth Question in Example x> and <Ground
+Truth Answer in Example x> are replaced with
+the actual question and answer from the sampled examples.
+Each image contains a question written
+inside it.
+Your task is to extract the
+question from the image and answer it
+accurately.
+Example 1:
+Input:
+<image>
+Output:
+{"The question in the image":
+"<Ground Truth Question in Example 1>",
+"Answer":
+"<Ground Truth Answer in
+Example 1>"}
+Example 2:
+Input:
+<image>
+Output:
+{"The question in the image":
+"<Ground Truth Question in Example 2>",
+"Answer":
+"<Ground Truth Answer in
+Example 2>"}
+Now answer the next one:
+Input:
+<image>
+Output:
+16
+
+Table A7. Comparison of model performance on traditional VQA, VoQA pure visual-only zero-shot, and few-shot settings across the
+VoQA benchmark. All results are reported in accuracy (%). For few-shot results, each model shows the setting with the highest average
+accuracy.
+Model
+Evaluation Setting
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+InternVL3-1B
+Traditional VQA
+71.8
+52.1
+88.8
+71.8
+95.4
+76.0
+VoQA zero-shot
+5.6
+3.2
+53.9
+12.8
+19.5
+19.0
+VoQA few-shot
+20.2
+12.8
+59.5
+26.6
+26.0
+29.0
+Qwen2.5-VL-3B-Instruct
+Traditional VQA
+82.0
+60.1
+88.2
+79.0
+84.9
+78.8
+VoQA zero-shot
+57.4
+35.0
+76.3
+60.7
+61.2
+58.1
+VoQA few-shot
+64.1
+41.4
+76.6
+64.4
+55.7
+60.4
+BLIP-3 (4B)
+Traditional VQA
+81.7
+61.6
+87.0
+71.0
+89.7
+78.2
+VoQA zero-shot
+7.3
+2.7
+49.7
+16.2
+29.1
+21.0
+VoQA few-shot
+54.0
+35.8
+75.3
+51.3
+28.2
+48.9
+Table A8. InternVL3-1B few-shot Answer Accuracy (ACC) and
+Question Alignment Accuracy (QAA) results. Correct and Incor-
+rect indicate correctly and incorrectly answered samples, respec-
+tively. All results are reported in accuracy (%).
+Setting
+Metric
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+1-shot
+QAA(Correct)
+/
+56.2
+45.1
+50.5
+25.0
+44.2
+QAA(Incorrect)
+/
+43.5
+40.1
+31.9
+18.2
+33.4
+ACC
+18.6
+11.0
+58.3
+23.7
+23.5
+27.0
+2-shot
+QAA(Correct)
+/
+53.5
+42.4
+51.2
+31.0
+44.5
+QAA(Incorrect)
+/
+45.3
+39.7
+34.9
+18.1
+34.5
+ACC
+20.2
+12.8
+59.5
+26.6
+26.0
+29.0
+4-shot
+QAA(Correct)
+/
+45.3
+33.9
+40.8
+27.9
+37.0
+QAA(Incorrect)
+/
+34.3
+30.4
+27.9
+17.5
+27.5
+ACC
+20.1
+11.9
+57.7
+24.0
+19.6
+26.7
+8-shot
+QAA(Correct)
+/
+38.3
+29.8
+31.9
+15.7
+28.9
+QAA(Incorrect)
+/
+28.9
+27.0
+22.0
+13.8
+22.9
+ACC
+19.2
+11.8
+57.1
+21.0
+14.5
+24.7
+Table A9. Qwen2.5-VL-3B-Instruct few-shot Answer Accuracy
+(ACC) and Question Alignment Accuracy (QAA) results.
+Setting
+Metric
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+1-shot
+QAA(Correct)
+/
+67.3
+63.7
+71.3
+42.3
+61.1
+QAA(Incorrect)
+/
+63.9
+61.8
+69.6
+30.5
+56.4
+ACC
+64.1
+41.4
+76.6
+64.4
+55.7
+60.4
+2-shot
+QAA(Correct)
+/
+69.9
+68.4
+73.6
+42.7
+63.6
+QAA(Incorrect)
+/
+64.4
+65.6
+71.0
+30.9
+58.0
+ACC
+62.2
+40.2
+73.8
+63.1
+50.4
+57.9
+4-shot
+QAA(Correct)
+/
+66.3
+67.7
+69.7
+44.0
+61.9
+QAA(Incorrect)
+/
+58.6
+63.6
+66.2
+29.1
+54.4
+ACC
+59.5
+38.5
+71.1
+61.7
+46.7
+55.5
+8-shot
+QAA(Correct)
+/
+57.1
+49.1
+61.1
+40.5
+52.0
+QAA(Incorrect)
+/
+42.4
+40.6
+49.1
+24.1
+39.0
+ACC
+48.0
+30.6
+62.6
+54.6
+30.9
+45.3
+Result analysis.
+As shown in Table A7, the few-shot eval-
+uation results on the VoQA benchmark show that few-shot
+examples help models better grasp the task pattern, yielding
+improvements over the zero-shot setting but still falling far
+short of performance on traditional VQA. The detailed re-
+sults of each model on each sub-task can be found in Tables
+A8, A9, and A10.
+Consistent with our workflow analysis, all models ex-
+hibit higher Question Alignment Accuracy (QAA) for cor-
+Table A10. BLIP-3 (4B) few-shot Answer Accuracy (ACC) and
+Question Alignment Accuracy (QAA) results.
+Setting
+Metric
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+1-shot
+QAA(Correct)
+/
+66.8
+63.1
+57.6
+25.6
+53.3
+QAA(Incorrect)
+/
+53.2
+58.5
+48.5
+13.7
+43.5
+ACC
+53.6
+35.4
+77.3
+51.1
+26.6
+48.8
+2-shot
+QAA(Correct)
+/
+67.5
+63.5
+55.3
+19.8
+51.5
+QAA(Incorrect)
+/
+52.2
+58.4
+47.0
+13.2
+42.7
+ACC
+54.0
+35.8
+75.3
+51.3
+28.2
+48.9
+4-shot
+QAA(Correct)
+/
+56.5
+40.7
+38.8
+4.5
+35.1
+QAA(Incorrect)
+/
+27.3
+26.2
+22.9
+4.7
+20.3
+ACC
+37.7
+26.2
+64.3
+42.4
+26.3
+39.4
+8-shot
+QAA(Correct)
+/
+37.6
+18.0
+20.2
+1.0
+19.2
+QAA(Incorrect)
+/
+8.1
+8.5
+6.9
+0.4
+6.0
+ACC
+23.3
+14.3
+57.0
+28.7
+29.2
+30.5
+rectly answered samples across all few-shot configurations,
+underscoring that accurate question recognition remains the
+main factor for reliable reasoning. However, models still
+struggle to consistently identify and interpret embedded
+questions, leading to only modest overall gains.
+17
+
+Table A11. ACC comparison of three fine-tuned models on the VoQA benchmark. All models share the same pre-trained backbone, and
+results are reported as accuracy (%).
+Base Model
+Settings
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+TinyLLaVA (1B)
+VoQA zero-shot
+0.2
+0.1
+50.4
+0
+0
+10.2
+Baseline-SFT
+63.4
+45.3
+75.5
+32.5
+24.4
+48.2
+InternVL (1B)
+VoQA zero-shot
+5.5
+3.2
+53.9
+12.8
+19.5
+19.0
+Baseline-SFT
+67.4
+50.1
+82.1
+35.2
+38.6
+54.7
+Qwen (2B)
+VoQA zero-shot
+11.6
+6.9
+55.5
+25.3
+21.3
+24.1
+Baseline-SFT
+75.9
+56.9
+85.9
+68.5
+54.3
+68.3
+Table A12. Evaluation of models fine-tuned on either VQA or VoQA using different strategies, all tested on traditional VQA benchmarks.
+Results are reported in accuracy (%).
+Base Model
+Training Setting
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+TinyLLaVA (1B)
+VQA SFT
+72.3
+55.8
+86.6
+42.1
+62.3
+63.8
+VoQA QA-SFT
+65.6
+48.9
+85.8
+34.3
+16.3
+50.2
+VoQA QRA-SFT
+72.6
+54.6
+87.1
+42.2
+60.3
+63.4
+InternVL (1B)
+VQA SFT
+76.8
+56.6
+88.9
+69.0
+88.0
+75.8
+VoQA QA-SFT
+74.6
+50.9
+85.7
+62.5
+85.3
+71.8
+VoQA QRA-SFT
+76.3
+56.1
+88.0
+64.5
+85.4
+74.1
+Qwen (2B)
+VQA SFT
+80.4
+60.7
+87.8
+76.0
+82.6
+77.5
+VoQA QA-SFT
+62.1
+50.7
+88.3
+46.1
+38.9
+57.2
+VoQA QRA-SFT
+70.6
+58.6
+85.9
+66.7
+77.7
+71.9
+C. Question-Alignment Fine-Tuning
+C.1. Fine-Tuning Settings
+All models are fine-tuned for one epoch with consistent
+hyperparameters, and all experiments are conducted on
+8× NVIDIA A100 (40GB) GPUs.
+TinyLLaVA (1B) is
+trained on both the connector and language model using
+AdamW[20], a cosine scheduler[21] with 0.03 warmup, a
+learning rate of 2 × 10−5, and a batch size of 128. For In-
+ternVL (1B) and Qwen (2B), only the language model is
+updated using LoRA[11] (rank 8), AdamW, and a cosine
+scheduler with 0.1 warmup; the learning rates are 1 × 10−5
+and 1.4 × 10−5, respectively, with a batch size of 64.
+C.2. Case Study of Fine-Tuning Strategies
+Figure A2 presents representative examples illustrating the
+inference behaviors of Fine-tuning Strategies on the VoQA
+benchmark. Each subfigure includes the composite image
+input, the model’s prediction, a brief behavior analysis, and
+the corresponding model name. The examples cover diverse
+outcomes such as irrelevant responses, question repetition,
+and correct answers.
+C.3. Fine-tuning Results on VoQA and traditional
+VQA Benchmarks
+Complete Results of VoQA ACC.
+Table A11 shows that
+Baseline-SFT yields consistent performance gains over the
+zero-shot setting across all VoQA sub-tasks.
+Table A13. Question Alignment Accuracy (QAA, %) of models
+after QRA-SFT fine-tuning. Correct and Incorrect indicate aver-
+ages computed over correctly and incorrectly answered samples,
+respectively. Higher QAA indicates better recognition of visually
+embedded questions.
+Model
+Results
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+TinyLLaVA
+Correct
+95.8
+98.6
+97.2
+87.2
+94.7
+Incorrect
+93.1
+95.1
+93.9
+73.6
+88.9
+InternVL
+Correct
+96.6
+98.3
+97.6
+89.7
+95.5
+Incorrect
+96.1
+97.6
+93.6
+57.9
+86.3
+Qwen
+Correct
+97.7
+98.7
+98.6
+92.8
+96.9
+Incorrect
+97.5
+98.8
+91.7
+73.8
+90.4
+Complete Results of VQA ACC.
+From the results in
+Table A12, QRA-SFT demonstrates clear advantages over
+QA-SFT on most VQA sub-tasks and even surpasses VQA-
+SFT in several cases. These findings highlight the strength
+of QRA-SFT in maintaining the traditional VQA input
+format while effectively aligning visual questions during
+VoQA-oriented fine-tuning.
+Complete Results of VoQA QAA.
+As summarized in Ta-
+ble A13, the average QAA of correct samples consistently
+exceeds that of incorrect ones across all sub-tasks, indicat-
+ing that accurately detecting the embedded question is a cru-
+cial prerequisite for reliable answer generation.
+18
+
+Figure A2. Nine representative case study examples illustrating the inference behavior of Baseline-SFT, QA-SFT, and QRA-SFT on the
+VoQA benchmark. The fine-tuning method used by each model is indicated as a suffix (-Baseline, -QA, -QRA) next to the model name.
+In each subfigure, the model’s predicted answer is shown in blue, while red and green indicate incorrect and correct answers, respectively,
+based on the Type field. The correctness of each sample is explicitly marked.
+19
+
+Table A14. Impact of including or excluding the role token during inference on traditional VQA benchmarks for both VoQA SFT variants.
+w/ Role and w/o Role indicate whether the role token is explicitly provided in the fixed input template at training or inference time, i.e.,
+whether the model receives this token immediately before generating the answer. Results are reported in accuracy (%).
+Model
+SFT
+Train
+Inference
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+TinyLLaVA (1B)
+QA-SFT
+w/ Role
+w/ Role
+65.6
+48.9
+85.8
+34.3
+16.3
+50.2
+w/o Role
+20.3
+7.7
+50.5
+16.4
+3.1
+19.6
+QRA-SFT
+w/o Role
+w/ Role
+72.6
+54.6
+87.1
+42.2
+60.3
+63.4
+w/o Role
+69.6
+52.2
+87.1
+40.7
+60.4
+62.0
+InternVL (1B)
+QA-SFT
+w/ Role
+w/ Role
+74.6
+50.9
+85.7
+62.5
+85.3
+71.8
+w/o Role
+12.2
+4.4
+50.6
+3.4
+48.8
+23.9
+QRA-SFT
+w/o Role
+w/ Role
+76.3
+56.1
+88.0
+64.5
+85.4
+74.1
+w/o Role
+74.6
+54.5
+85.9
+63.7
+81.6
+72.0
+Qwen (2B)
+QA-SFT
+w/ Role
+w/ Role
+62.1
+50.7
+88.3
+46.1
+38.9
+57.2
+w/o Role
+0
+0
+51.1
+0
+0.6
+10.3
+QRA-SFT
+w/o Role
+w/ Role
+70.6
+58.6
+85.9
+66.7
+77.7
+71.9
+w/o Role
+63.4
+47.8
+79.1
+37.4
+49.8
+55.5
+C.4. Influence of Role Tokens in VQA Inference
+Templates
+Purpose.
+Since QA-SFT alters the input sequence format
+originally used in traditional VQA, we examine how the in-
+clusion of the role token (i.e., the ASSISTANT: token shown
+in Figure 5) influences model behavior during VQA infer-
+ence. Specifically, we analyze whether retaining this token
+helps preserve VQA performance and how its presence or
+absence affects QRA-SFT.
+Findings.
+Table A14 shows that including the role token
+generally improves the performance of both SFT variants,
+suggesting that the token serves as a useful cue that prompts
+the model to begin generating an answer in traditional VQA
+settings.
+Nevertheless, QRA-SFT without this token re-
+mains highly competitive, indicating that the model implic-
+itly learns to anticipate this token during VoQA fine-tuning
+and thus can still maintain robust question–answer align-
+ment even without explicitly providing the structural cue.
+C.5. Exploring Variants of Question-Alignment
+Fine-Tuning
+C.5.1. Analyzing the Effect of Role Tokens in Question-
+Alignment Fine-Tuning
+Since QA-SFT and QRA-SFT differ in both the placement
+of role tokens and whether these tokens appear in the super-
+vised target, we further investigate how role-token position-
+ing and supervision design influence model behavior.
+R-QRA-SFT.
+As illustrated in Figure A3 (Line 3), Role-
+guided Question–Role–Answer Supervised Fine-Tuning (R-
+QRA-SFT) unifies the strengths of QA-SFT and QRA-SFT
+under a consistent structure. The input includes a role token
+that identifies the model as an ASSISTANT, serving as a cue
+to initiate answer generation. Meanwhile, the supervised
+Figure A3. Comparison of six supervised fine-tuning strategies on
+the VoQA dataset. All methods are our proposed VoQA-specific
+approaches that first align the visually grounded question before
+generating the answer. The first two correspond to the main meth-
+ods discussed in the paper: QA-SFT (denoted here as R-QA-SFT
+for consistency across variants) and QRA-SFT. The middle two are
+their variants, obtained by adding or removing the role token rel-
+ative to the original methods. The last two correspond to variants
+of R-QA-SFT and R-QRA-SFT in which the model is required to
+explicitly predict the role token at the beginning of the output se-
+quence.
+target expands to the complete Question–Role–Answer se-
+quence, making the boundary between question interpreta-
+tion and answer production explicit. This design enforces
+structured reasoning while preserving tight visual–textual
+alignment.
+QA-only-SFT.
+To isolate the effect of explicit role cues,
+we introduce Question–Answer only Supervised Fine-
+Tuning (QA-only-SFT, Figure A3, Line 4), where both the
+input and output sequences omit the ASSISTANT token,
+while the model still predicts the full question–answer pair.
+This variant tests whether removing role tokens weakens the
+model’s ability to align visually embedded questions with
+correct answers.
+Result Analysis.
+Table A15 shows that QA-only-SFT
+performs slightly worse than R-QRA-SFT, though their re-
+20
+
+Table A15. Comparison between five fine-tuning strategies on the
+VoQA benchmark. All results are reported in accuracy (%).
+Model
+VoQA SFT
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+TinyLLaVA (1B)
+Baseline-SFT
+63.4
+45.3
+75.5
+32.5
+24.4
+48.2
+QA-SFT
+70.0
+49.8
+84.1
+37.4
+36.9
+55.6
+QRA-SFT
+69.6
+49.5
+83.8
+37.1
+38.2
+55.6
+R-QRA-SFT
+69.7
+49.6
+84.0
+37.4
+37.3
+55.6
+QA-only-SFT
+69.2
+48.7
+83.8
+37.5
+36.1
+55.1
+InternVL (1B)
+Baseline-SFT
+67.4
+50.1
+82.1
+35.2
+38.6
+54.7
+QA-SFT
+73.2
+53.0
+86.6
+53.7
+42.5
+61.8
+QRA-SFT
+72.6
+52.7
+85.8
+56.3
+49.1
+63.3
+R-QRA-SFT
+72.5
+53.2
+87.3
+56.2
+50.3
+63.9
+QA-only-SFT
+69.5
+51.2
+86.3
+53.5
+50.5
+62.2
+Qwen (2B)
+Baseline-SFT
+75.9
+56.9
+85.9
+68.5
+54.3
+68.3
+QA-SFT
+79.2
+60.1
+87.6
+70.8
+60.6
+71.7
+QRA-SFT
+78.1
+60.5
+88.0
+70.8
+60.5
+71.6
+R-QRA-SFT
+78.0
+60.5
+88.1
+71.9
+63.9
+72.5
+QA-only-SFT
+79.3
+60.6
+87.9
+72.3
+58.1
+71.6
+sults remain highly comparable. This indicates that role to-
+kens provide only a weak segmentation cue in this setting.
+When compared with QA-SFT and QRA-SFT introduced
+in Section 4, all four question-aligned fine-tuning strate-
+gies exhibit similar performance and consistently surpass
+Baseline-SFT by a substantial margin. Overall, the results
+confirm that precise question alignment is the primary fac-
+tor driving the model’s success on the VoQA task, while the
+presence of role tokens plays a relatively minor role.
+C.5.2. Effect of Predicting the Initial Role Token
+Two variants.
+To further understand how role tokens in-
+fluence question-aligned fine-tuning, we analyze whether
+models can autonomously infer their role instead of rely-
+ing on an explicit role token placed at the beginning of
+the output sequence, which is the default design in both
+R-QA-SFT and R-QRA-SFT. Building on these strategies,
+we extend the supervised targets to include the initial role
+token, yielding Role–Question–Answer Supervised Fine-
+Tuning (RQA-SFT, Figure A3, Line 5, from R-QA-SFT)
+and Role–Question–Role–Answer Supervised Fine-Tuning
+(RQRA-SFT, Figure A3, Line 6, from R-QRA-SFT).
+Findings.
+Experiments on InternVL models reveal a con-
+sistent pattern. When the role token is not provided dur-
+ing inference, both variants show degraded performance
+because the model struggles to predict the token reliably.
+However, once the role token is supplied as an input cue,
+performance improves substantially. The findings demon-
+Table A16. Comparison of two fine-tuning strategies on the VoQA
+benchmark using the InternVL3-1B model, evaluating their perfor-
+mance with and without providing the role token during inference.
+All results are reported in accuracy (%).
+SFT
+Train
+Inference
+VQAv2
+GQA
+POPE
+TextVQA
+SQA
+Avg.
+RQA
+w/o Role
+w/ Role
+71.9
+52.0
+85.5
+51.6
+44.1
+61.0
+w/o Role
+37.0
+22.5
+68.1
+29.8
+25.6
+36.6
+RQRA
+w/o Role
+w/ Role
+72.8
+53.1
+86.9
+56.8
+51.3
+64.2
+w/o Role
+5.2
+4.2
+52.0
+6.6
+30.8
+19.8
+strate that VoQA performance is determined primarily by
+whether the model initiates generation with accurate align-
+ment to the visually embedded question, while the pres-
+ence or prediction of a role token has no substantive impact.
+In other words, successful VoQA performance depends far
+more on accurate question alignment at the first step than
+on predicting an explicit ASSISTANT role token.
+21

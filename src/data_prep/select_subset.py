@@ -4,13 +4,14 @@ import random
 from pathlib import Path
 
 def main():
-    # Define root and paths according to the new directory structure
-    root_dir = Path(r"d:\Main\Rnd_Projects\VoQA-Multilingual")
+    # Define root and paths relatively
+    # Script is in src/data_prep/, so root is two levels up
+    current_dir = Path(__file__).resolve().parent
+    root_dir = current_dir.parent.parent
     
     gqa_jsonl = root_dir / "voqa_gqa" / "test" / "gqa" / "llava_gqa_testdev_balanced.jsonl"
-    images_dir = root_dir / "images"
-    
-    # Multilingual tracking directories
+    gqa_dir = root_dir / "voqa_gqa" / "test" / "gqa"
+    images_dir = gqa_dir / "images"
     out_dir = root_dir / "data_multilingual" / "subsets"
     out_dir.mkdir(parents=True, exist_ok=True)
     
@@ -44,7 +45,7 @@ def main():
         else:
             missing_images += 1
             
-        if len(selected_questions) == 1000:
+        if len(selected_questions) == 100:
             break
             
     if missing_images > 0:

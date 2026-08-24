@@ -68,3 +68,23 @@ Rather than hoarding 1000 inferences in RAM and saving at the end of the script 
 
 **The Reasoning:**
 A cluster limit explicitly slaughters processes flawlessly at exactly 12 hours. If the script was organically structured to write results at completion, 11 hours and 59 minutes of computed tensors would disappear. By aggressively flushing structurally atomic JSON lines and caching them upon restart, we completely disarm the time limitation. When jobs are terminated, Slurm is simply commanded to re-trigger the script, where it smoothly resumes without losing a single compute cycle.
+
+---
+
+## Decision 7: Strict Filename Native Mapping in Renderers
+
+**The Decision:**
+Instead of saving rendered files (watermarks, concat-padded) as `{question_id}.jpg`, the pipeline strictly dictates saving them under their native `{raw_image_filename}` format.
+
+**The Reasoning:**
+The GQA dataset intrinsically maps multiple specific questions to one single visual raw image. If the renderers saved newly watermarked layers using the `question_id`, the visual inference loop would fail to physically locate the correct rendered image since it implicitly looks for the base `image_filename`. Resaving them precisely by the original raw image filename structurally eliminates dynamic path collisions and maintains a rigid 1-to-N mathematical topology. 
+
+---
+
+## Decision 8: Ghost Environment Purging for Core Torch Components
+
+**The Decision:**
+Instead of trusting the baseline SLURM python environment or simple `pip install` commands, the pipeline explicitly demands a "ghost-purge" (running `pip uninstall -y torch torchvision` twice iteratively) before installing the specialized CU121 `cu121/torch-2.2.2` indices inside an isolated Conda architecture.
+
+**The Reasoning:**
+Overlapping "Frankenstein" pip environments on computing clusters aggressively create ghost library dependencies where the underlying `torchvision` C++ registries mathematically conflict with native `torch` APIs. Isolating and entirely purging the binaries is the only proven methodology to prevent native `register_fake` tracking errors from triggering core C++ dumps during VRAM allocation.

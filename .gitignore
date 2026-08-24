@@ -11,3 +11,6 @@ implementation_plan.md
 /Detailed_VOQA.pdf
 /tools/smoke_test_output
 /voqa_gqa.zip
+/output_cluster/
+/logs_cluster/
+/data_multilingual_cluster/

@@ -14,3 +14,4 @@ implementation_plan.md
 /output_cluster/
 /logs_cluster/
 /data_multilingual_cluster/
+/inference/

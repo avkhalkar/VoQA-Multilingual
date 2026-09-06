@@ -22,7 +22,9 @@ class CommonUniTrainingRecipe():
             self.training_arguments = training_arguments
 
     
-    def __call__(self, model):
+    
+    def __call__(s
+    elf, model):
         model = self.training_model_converse(model)
         model = self.tune_type_setting(model)
         model.config.tune_type_connector = self.training_arguments.tune_type_connector

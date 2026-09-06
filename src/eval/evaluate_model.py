@@ -5,6 +5,16 @@ import re
 import argparse
 from pathlib import Path
 
+"""
+Academic Evaluation Implementation (Ref: VoQA Paper)
+- Section 4.1 (Evaluation Metrics): Exact Match (EM) Accuracy.
+- Section 4.1 (Evaluation Metrics): Semantic Match via BERTScore (F1 >= 0.90).
+- Section 4.2 (Question Extraction): Question Extraction Accuracy (QAA).
+  Note: QAA is evaluated heavily filtering on Semantic Match (Soft Match) 
+  rather than Exact Match to prevent catastrophic QAA structural degradation
+  due to conversational padding in VLMs.
+"""
+
 # Ensure package context mapping
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 

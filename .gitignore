@@ -16,3 +16,8 @@ implementation_plan.md
 /data_multilingual_cluster/
 /inference/
 /PROJECT_CONTEXT.md
+/voqa_test_benchmark/
+/textvqa_images/
+/output_tuning/
+/eval_results/
+__pycache__/

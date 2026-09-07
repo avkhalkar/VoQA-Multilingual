@@ -4,19 +4,21 @@
 # Purpose: Core DeepSpeed execution function abstracting the PyTorch trainer.
 # ==============================================================================
 
-# Expects parameters: (data_path, image_folder, output_dir, lora_rank [optional], base_task_adapter [optional])
+# Expects parameters: (data_path, image_folder, output_dir, lora_rank, base_task_adapter, strategy_type)
 run_deepspeed_finetune() {
     local data_path="$1"
     local image_folder="$2"
     local output_dir="$3"
     local lora_rank="${4:-8}"
     local base_adapter="${5:-}"
+    local strategy_type="${6:-internvl}" # Default to pure InternVL mapping if strategy absent
 
     local cmd=(
         deepspeed --num_gpus 1 $BASE_DIR/src/fine-tuning/python_modules/train_orchestrator.py
         --deepspeed $BASE_DIR/train/scripts/zero3.json
         --model_name_or_path "OpenGVLab/InternVL2-1B"
         --version "internvl"
+        --conv_version "$strategy_type"
         --data_path "$data_path"
         --image_folder "$image_folder"
         --vision_tower "OpenGVLab/InternVL2-1B-Vision"

@@ -14,7 +14,8 @@ run_stage2() {
     for LANG in "${TARGET_LANGS[@]}"; do
         # Stage 2 Monolithic explicitly uses the universal text dataset to prevent overfitting
         local data_jsonl="$SUBSET_DIR/${LANG}/universal_cross_dataset_500.jsonl"
-        local img_folder="$BASE_DIR/voqa_test_benchmark/test/$LANG/cross_dataset_rerendered"
+        local raw_img_folder="$BASE_DIR/voqa_test_benchmark/test/$LANG"
+        local render_img_folder="$raw_img_folder/cross_dataset_rerendered"
         
         for STRAT in "${STRATEGIES[@]}"; do
             local out_dir="$output_base/$LANG/universal_benchmark/$STRAT"
@@ -22,8 +23,26 @@ run_stage2() {
             
             echo ">>> Executing Monolithic Stage 2: Lang=[$LANG] | Strat=[$STRAT]"
             
-            # Execute unified deepspeed engine (Rank 8, No Base Adapter)
-            run_deepspeed_finetune "$data_jsonl" "$img_folder" "$out_dir" 8 ""
+            # --- UNIFIED STRATEGY & IO ROUTER ---
+            local target_img_folder="$render_img_folder"
+            local conv_target="phi_qa"
+            
+            case "$STRAT" in
+                "baseline_sft") 
+                    conv_target="phi_baseline" 
+                    target_img_folder="$raw_img_folder" # Pure Control VQA uses RAW images!
+                    ;;
+                "qa_sft") conv_target="phi_qa" ;;
+                "qra_sft") conv_target="phi_stage3" ;;
+                "r_qra_sft") conv_target="phi_r_qra" ;;
+                "qa_only_sft") conv_target="phi_qa_only" ;;
+                "voqa_baseline") conv_target="phi_baseline" ;;
+                *) conv_target="phi_qa" ;;
+            esac
+            # ------------------------------------
+            
+            # Execute unified deepspeed engine (Rank 8, No Base Adapter) passing the Mapped Strategy
+            run_deepspeed_finetune "$data_jsonl" "$target_img_folder" "$out_dir" 8 "" "$conv_target"
         done
     done
 }

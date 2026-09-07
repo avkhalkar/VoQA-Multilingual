@@ -21,7 +21,25 @@ run_stage1() {
         
         echo ">>> Executing Universal Task Adapter: Strategy=[$STRAT]"
         
-        # Execute centralized deepspeed engine for Stage 1 (Rank 8, No Base Adapter)
-        run_deepspeed_finetune "$data_jsonl" "$img_folder" "$out_dir" 8 ""
+        # --- UNIFIED STRATEGY & IO ROUTER ---
+        local target_img_folder="$img_folder/cross_dataset_rerendered"
+        local conv_target="phi_qa"
+        
+        case "$STRAT" in
+            "baseline_sft") 
+                conv_target="phi_baseline" 
+                target_img_folder="$img_folder" # Pure Control VQA uses RAW images!
+                ;;
+            "qa_sft") conv_target="phi_qa" ;;
+            "qra_sft") conv_target="phi_stage3" ;;
+            "r_qra_sft") conv_target="phi_r_qra" ;;
+            "qa_only_sft") conv_target="phi_qa_only" ;;
+            "voqa_baseline") conv_target="phi_baseline" ;;
+            *) conv_target="phi_qa" ;;
+        esac
+        # ------------------------------------
+        
+        # Execute centralized deepspeed engine for Stage 1 (Rank 8, No Base Adapter) passing mapped conv_version
+        run_deepspeed_finetune "$data_jsonl" "$target_img_folder" "$out_dir" 8 "" "$conv_target"
     done
 }

@@ -59,6 +59,17 @@ class LazySupervisedDataset(Dataset):
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
+        
+        # --- HETEROGENEOUS SCHEMA ROUTER ---
+        if "conversations" not in sources:
+            text_prompt = sources.get("text", "")
+            if "<image>" not in text_prompt:
+                text_prompt = "<image>\n" + text_prompt
+            sources["conversations"] = [
+                {"from": "human", "value": text_prompt},
+                {"from": "gpt", "value": "fallback_ground_truth"}
+            ]
+            
         data_dict = self.text_preprocess(copy.deepcopy(sources["conversations"]))
         if 'image' in sources:
             image_file = self.list_data_dict[i]['image']
@@ -201,6 +212,17 @@ class LazySupervisedDatasetUni(Dataset):
 
     def __getitem__(self, i) -> Dict[str, torch.Tensor]:
         sources = self.list_data_dict[i]
+        
+        # --- HETEROGENEOUS SCHEMA ROUTER ---
+        if "conversations" not in sources:
+            text_prompt = sources.get("text", "")
+            if "<image>" not in text_prompt:
+                text_prompt = "<image>\n" + text_prompt
+            sources["conversations"] = [
+                {"from": "human", "value": text_prompt},
+                {"from": "gpt", "value": "fallback_ground_truth"}
+            ]
+            
         data_dict = self.text_preprocess(copy.deepcopy(sources["conversations"]))
 
         if self.data_args.conv_version == 'pretrain':

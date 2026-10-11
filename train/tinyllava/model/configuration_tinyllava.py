@@ -104,6 +104,11 @@ class TinyLlavaConfig(PretrainedConfig):
            
         else:
             self.text_config = AutoConfig.from_pretrained(self.llm_model_name_or_path, trust_remote_code=True)
+            if getattr(self.text_config, "model_type", None) == "internvl_chat":
+                self.text_config = getattr(self.text_config, "llm_config", self.text_config)
+            
+            # Bypass `flash-attn` ImportError by enforcing native PyTorch SDPA 2.0 implementation
+            setattr(self.text_config, "_attn_implementation", "sdpa")
             if text_config is not None:
                 self.text_config = self.text_config.from_dict(text_config)
                 
@@ -126,7 +131,12 @@ class TinyLlavaConfig(PretrainedConfig):
             )
             
         else:
-            self.vision_config = AutoConfig.from_pretrained(self.vision_model_name_or_path.split(':')[-1])
+            self.vision_config = AutoConfig.from_pretrained(self.vision_model_name_or_path.split(':')[-1], trust_remote_code=True)
+            if getattr(self.vision_config, "model_type", None) == "internvl_chat":
+                self.vision_config = getattr(self.vision_config, "vision_config", self.vision_config)
+            
+            # Bypass `flash-attn` C++ dependency
+            setattr(self.vision_config, "use_flash_attn", False)
             self.vision_config = getattr(self.vision_config, 'vision_config', self.vision_config)
             if vision_config is not None:
                 self.vision_config = self.vision_config.from_dict(vision_config)

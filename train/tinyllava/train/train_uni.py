@@ -51,7 +51,11 @@ def train():
     # load argument
     parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments))
-    model_arguments, data_arguments, training_arguments = parser.parse_args_into_dataclasses()
+    try:
+        model_arguments, data_arguments, training_arguments = parser.parse_args_into_dataclasses()
+    except ValueError:
+        parsed = parser.parse_args_into_dataclasses(return_remaining_strings=True)
+        model_arguments, data_arguments, training_arguments = parsed[0], parsed[1], parsed[2]
     
     logger_setting(getattr(training_arguments, 'output_dir', None))
 

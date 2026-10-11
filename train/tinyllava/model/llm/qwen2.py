@@ -2,6 +2,7 @@ from transformers import Qwen2ForCausalLM, AutoTokenizer
 
 from . import register_llm
 
+@register_llm('internvl')
 @register_llm('qwen2')
 def return_qwen2class():
     def tokenizer_and_post_load(tokenizer):

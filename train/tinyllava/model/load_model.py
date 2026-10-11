@@ -10,7 +10,7 @@ from tinyllava.train.tinyllava_trainer import LLaVATrainer
 from tinyllava.training_recipe import TrainingRecipeFactory
 from tinyllava.utils import *
 from tinyllava.model import *
-from tinyllava.train.train import *
+from tinyllava.train.train_uni import *
 
  
 def load_base_ckp_for_lora(ckp_path):

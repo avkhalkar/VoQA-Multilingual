@@ -2,9 +2,20 @@ import torch
 import torch.nn as nn
 from . import register_connector
 from .base import Connector
-import torch
-from einops import rearrange, repeat
-from einops_exts import rearrange_many
+try:
+    from einops import rearrange, repeat
+except ImportError:
+    rearrange = None
+    repeat = None
+
+try:
+    from einops_exts import rearrange_many
+except ImportError:
+    def rearrange_many(tensors, pattern, **kwargs):
+        if rearrange is not None:
+            return [rearrange(t, pattern, **kwargs) for t in tensors]
+        return tensors
+
 from torch import einsum
 
 

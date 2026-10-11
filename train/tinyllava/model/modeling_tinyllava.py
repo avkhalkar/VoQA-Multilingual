@@ -35,8 +35,8 @@ class TinyLlavaPreTrainedModel(PreTrainedModel):
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
     _no_split_modules = ["LlavaVisionAttention"]
-    _skip_keys_device_placement = "past_key_values"
     _supports_flash_attn_2 = True
+    _supports_cache_class = True
 
     def _init_weights(self, module):
         std = (
@@ -59,7 +59,11 @@ class TinyLlavaPreTrainedModel(PreTrainedModel):
 
     @property
     def _supports_sdpa(self):
-        return self.language_model._supports_sdpa
+        if hasattr(self, "_modules") and "language_model" in self._modules:
+            return getattr(self._modules["language_model"], "_supports_sdpa", True)
+        if "language_model" in self.__dict__:
+            return getattr(self.__dict__["language_model"], "_supports_sdpa", True)
+        return True
 
 
 class TinyLlavaForConditionalGeneration(TinyLlavaPreTrainedModel):
@@ -80,6 +84,7 @@ class TinyLlavaForConditionalGeneration(TinyLlavaPreTrainedModel):
             model_max_length = config.tokenizer_model_max_length,
             padding_side = config.tokenizer_padding_side,
             use_fast = config.tokenizer_use_fast,
+            trust_remote_code = True,
         ))
         self.post_init()
 
@@ -102,8 +107,10 @@ class TinyLlavaForConditionalGeneration(TinyLlavaPreTrainedModel):
     def get_decoder(self):
         return self.language_model.get_decoder()
 
-    def tie_weights(self):
-        return self.language_model.tie_weights()
+    def tie_weights(self, *args, **kwargs):
+        if hasattr(self, "language_model") and hasattr(self.language_model, "tie_weights"):
+            return self.language_model.tie_weights(*args, **kwargs)
+        return None
 
     def resize_token_embeddings(self, new_num_tokens: Optional[int] = None, pad_to_multiple_of=None) -> nn.Embedding:
         model_embeds = self.language_model.resize_token_embeddings(new_num_tokens, pad_to_multiple_of)
@@ -395,6 +402,7 @@ class TinyLlavaForConditionalGeneration(TinyLlavaPreTrainedModel):
         if pretrained_llm_path is not None:
             language_model_name = pretrained_llm_path
         if language_model_name is not None:
+            kwargs.setdefault('trust_remote_code', True)
             self.language_model = self.language_model.from_pretrained(
                 language_model_name, **kwargs
             )
@@ -410,6 +418,7 @@ class TinyLlavaForConditionalGeneration(TinyLlavaPreTrainedModel):
         
     def load_vision_tower(self, **kwargs):
         vision_tower_name = get_value_from_kwargs(kwargs, 'model_name_or_path')
+        kwargs.setdefault('trust_remote_code', True)
         self.vision_tower.load_model(vision_tower_name, **kwargs)
 
     def load_connector(self, **kwargs):

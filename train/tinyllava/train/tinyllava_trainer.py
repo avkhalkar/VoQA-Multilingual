@@ -9,10 +9,16 @@ from transformers.trainer import (
     is_sagemaker_mp_enabled,
     get_parameter_names,
     has_length,
-    ALL_LAYERNORM_LAYERS,
     # ShardedDDPOption,
     logger,
 )
+try:
+    from transformers.trainer import ALL_LAYERNORM_LAYERS
+except (ImportError, AttributeError):
+    try:
+        from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
+    except (ImportError, AttributeError):
+        ALL_LAYERNORM_LAYERS = [nn.LayerNorm]
 from typing import List, Optional
 
 from ..utils.train_utils import *
@@ -122,20 +128,25 @@ class LengthGroupedSampler(Sampler):
 
 class LLaVATrainer(Trainer):
 
-    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if self.train_dataset is None or not has_length(self.train_dataset):
+    def _get_train_sampler(self, dataset=None, *args, **kwargs) -> Optional[torch.utils.data.Sampler]:
+        ds = dataset if dataset is not None else self.train_dataset
+        if ds is None or not has_length(ds):
             return None
 
         if self.args.group_by_modality_length:
-            lengths = self.train_dataset.modality_lengths
-            return LengthGroupedSampler(
-                # self.args.train_batch_size * self.args.gradient_accumulation_steps, # TODO: seems that we should not have gradient_accumulation_steps
-                self.args.train_batch_size,
-                world_size=self.args.world_size,
-                lengths=lengths,
-                group_by_modality=True,
-            )
-        else:
+            lengths = getattr(ds, "modality_lengths", getattr(self.train_dataset, "modality_lengths", None))
+            if lengths is not None:
+                return LengthGroupedSampler(
+                    # self.args.train_batch_size * self.args.gradient_accumulation_steps, # TODO: seems that we should not have gradient_accumulation_steps
+                    self.args.train_batch_size,
+                    world_size=self.args.world_size,
+                    lengths=lengths,
+                    group_by_modality=True,
+                )
+
+        try:
+            return super()._get_train_sampler(ds, *args, **kwargs)
+        except TypeError:
             return super()._get_train_sampler()
 
     def create_optimizer(self):

@@ -225,6 +225,17 @@ class LazySupervisedDatasetUni(Dataset):
             
         data_dict = self.text_preprocess(copy.deepcopy(sources["conversations"]))
 
+        # [VoQA Diagnostic Monitor]: Print exactly what the model sees for the first data item
+        if not hasattr(self, "_printed_debug_prompt"):
+            self._printed_debug_prompt = True
+            decoded_prompt = self.tokenizer.decode(data_dict["input_ids"], skip_special_tokens=False)
+            print("\n" + "="*80)
+            print("👁️  [VoQA MONITOR] THE EXACT PHYSICAL STRING FED TO THE LLM BACKBONE:")
+            print("="*80)
+            print(f"Schema Used: {self.data_args.conv_version}")
+            print(f"Raw String : {decoded_prompt.encode('unicode_escape').decode('utf-8')}")
+            print("="*80 + "\n")
+
         if self.data_args.conv_version == 'pretrain':
             if 'image' in sources:
                 image_file = self.list_data_dict[i]['image']
@@ -250,29 +261,82 @@ class LazySupervisedDatasetUni(Dataset):
             return data_dict
 
 
-        if self.data_args.conv_version == 'phi_qra' or self.data_args.conv_version == 'phi_r_qra' or \
-        self.data_args.conv_version == 'phi_baseline' or self.data_args.conv_version == 'phi_qa' or \
-        self.data_args.conv_version == 'phi_qa_only' or self.data_args.conv_version == 'phi_qra_cat' or self.data_args.conv_version == 'phi_qra_helper':
+        if self.data_args.conv_version in [
+            'phi_qra', 'phi_r_qra', 'phi_baseline', 'phi_qa',
+            'phi_qa_only', 'phi_qra_cat', 'phi_qra_helper', 'phi_empty_inference'
+        ]:
             # Finetune Stage
             # At this stage, the images used for training are synthesized by 
             # combining question text and original images, which can be done 
             # through methods like concatenation or watermarking.
-            id = str(self.list_data_dict[i]['id'])
-            id = id.replace('/','_')
+            raw_id = str(self.list_data_dict[i].get('id', ''))
+            safe_id = raw_id.replace('/', '_')
 
-            syn_image_files = self.list_data_dict[i]['syn_images']
+            syn_image_files = self.list_data_dict[i].get('syn_images', [])
+            if isinstance(syn_image_files, str):
+                syn_image_files = [syn_image_files]
+            if not syn_image_files:
+                syn_image_files = ['prompt_1.jpg']
+
             syn_images = []
-            syn_image_folder = os.path.join(self.data_args.image_folder, id)
-            for syn_image_file in syn_image_files:
-                # print(f'syn_image_file: {syn_image_file}\n')
-                syn_image = Image.open(os.path.join(syn_image_folder, syn_image_file)).convert('RGB')
-                syn_image = self.image_preprocess(syn_image)
-                # print(f'syn image: {syn_image.shape}')
-                syn_images.append(syn_image)
-            
-            data_dict['image'] = torch.stack(syn_images)
-            # print(f"syn_images_for each data: {data_dict['image'].shape}")
+            base_folder = self.data_args.image_folder
+            orig_img = sources.get('image', '')
 
+            for syn_image_file in syn_image_files:
+                candidate_paths = [
+                    # 1. Absolute path if it already exists directly
+                    syn_image_file if (syn_image_file and os.path.isabs(syn_image_file)) else None,
+                    # 2. Base folder + safe_id (with underscores, e.g. VG_100K_280-2)
+                    os.path.join(base_folder, safe_id, syn_image_file) if base_folder else None,
+                    # 3. Base folder + raw_id (with subdirectories preserved, e.g. VG_100K/280-2)
+                    os.path.join(base_folder, raw_id, syn_image_file) if base_folder else None,
+                    # 4. Base folder + filename directly
+                    os.path.join(base_folder, syn_image_file) if base_folder else None,
+                    # 5. NFS cluster rendered storage paths (English / Italian)
+                    os.path.join("/mnt/gpu_users/Aditya/rendered_images/eng", safe_id, syn_image_file),
+                    os.path.join("/mnt/gpu_users/Aditya/rendered_images/eng", raw_id, syn_image_file),
+                    os.path.join("/mnt/gpu_users/Aditya/rendered_images/ita", safe_id, syn_image_file),
+                    os.path.join("/mnt/gpu_users/Aditya/rendered_images/ita", raw_id, syn_image_file),
+                    # 6. Scratch multilingual rendered locations
+                    os.path.join("/scratch/users/anandk03/VoQA_train/multilingual/rendered_images/eng", safe_id, syn_image_file),
+                    os.path.join("/scratch/users/anandk03/VoQA_train/multilingual/rendered_images/eng", raw_id, syn_image_file),
+                    os.path.join("/scratch/users/anandk03/VoQA_train/multilingual/rendered_images/ita", safe_id, syn_image_file),
+                    os.path.join("/scratch/users/anandk03/VoQA_train/multilingual/rendered_images/ita", raw_id, syn_image_file),
+                ]
+
+                # 7. Fallback to raw original images if watermarked version not found
+                if orig_img:
+                    norm_orig = orig_img.replace('\\', '/')
+                    candidate_paths.extend([
+                        os.path.join(base_folder, orig_img) if base_folder else None,
+                        os.path.join("/scratch/users/anandk03/original_images", orig_img),
+                        os.path.join("/scratch/users/anandk03/original_images", norm_orig.replace('vg/VG_100K/', 'VG_100K/').replace('vg/VG_100K_2/', 'VG_100K_2/').replace('coco/train2017/', 'coco/')),
+                    ])
+
+                found_img_path = None
+                for cand in candidate_paths:
+                    if cand and os.path.exists(cand):
+                        found_img_path = cand
+                        break
+
+                if found_img_path is not None:
+                    syn_image = Image.open(found_img_path).convert('RGB')
+                else:
+                    if not hasattr(self, "_warned_missing_images"):
+                        self._warned_missing_images = set()
+                    if raw_id not in self._warned_missing_images:
+                        self._warned_missing_images.add(raw_id)
+                        if len(self._warned_missing_images) <= 10:
+                            print(f"[!] [VoQA Dataset Warning] Sample '{raw_id}' image '{syn_image_file}' not found across candidates. Using blank tensor fallback.")
+                    crop_size = getattr(self.data_args.image_processor, 'crop_size', getattr(self.data_args.image_processor, 'size', {'height': 384, 'width': 384}))
+                    h = crop_size.get('height', 384) if isinstance(crop_size, dict) else getattr(crop_size, 'height', 384)
+                    w = crop_size.get('width', 384) if isinstance(crop_size, dict) else getattr(crop_size, 'width', 384)
+                    syn_image = Image.new('RGB', (w, h), color=(0, 0, 0))
+
+                syn_image = self.image_preprocess(syn_image)
+                syn_images.append(syn_image)
+
+            data_dict['image'] = torch.stack(syn_images)
             return data_dict
 
 @dataclass

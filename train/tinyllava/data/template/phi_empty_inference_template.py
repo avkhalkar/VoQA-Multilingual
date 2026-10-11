@@ -45,9 +45,12 @@ class PhiEmptyInferenceTemplate(Template):
             if rou == "":
                 break
                 
-            parts = rou.split(sep)
-            if len(parts) != 2:
-                break
+            if sep:
+                parts = rou.split(sep)
+                if len(parts) != 2:
+                    break
+            else:
+                parts = [rou]
                 
             round_len = len(self.tokenizer_image_token(rou, tokenizer)) + eos_token_length
             

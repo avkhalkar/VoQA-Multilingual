@@ -39,6 +39,7 @@ run_deepspeed_finetune() {
         --weight_decay 0. \
         --warmup_ratio 0.1 \
         --lr_scheduler_type 'cosine' \
+        --bf16 True \
         --tf32 True \
         --model_max_length 2048 \
         --gradient_checkpointing True \

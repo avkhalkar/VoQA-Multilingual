@@ -228,13 +228,20 @@ class LazySupervisedDatasetUni(Dataset):
         # [VoQA Diagnostic Monitor]: Print exactly what the model sees for the first data item
         if not hasattr(self, "_printed_debug_prompt"):
             self._printed_debug_prompt = True
-            decoded_prompt = self.tokenizer.decode(data_dict["input_ids"], skip_special_tokens=False)
-            print("\n" + "="*80)
-            print("👁️  [VoQA MONITOR] THE EXACT PHYSICAL STRING FED TO THE LLM BACKBONE:")
-            print("="*80)
-            print(f"Schema Used: {self.data_args.conv_version}")
-            print(f"Raw String : {decoded_prompt.encode('unicode_escape').decode('utf-8')}")
-            print("="*80 + "\n")
+            try:
+                raw_ids = data_dict["input_ids"]
+                ids_list = raw_ids.tolist() if hasattr(raw_ids, "tolist") else list(raw_ids)
+                # Filter out negative token IDs (e.g. IMAGE_TOKEN_INDEX = -200) to prevent OverflowError in HuggingFace/Rust tokenizer
+                clean_ids = [tok for tok in ids_list if tok >= 0]
+                decoded_prompt = self.tokenizer.decode(clean_ids, skip_special_tokens=False)
+                print("\n" + "="*80)
+                print("👁️  [VoQA MONITOR] THE EXACT PHYSICAL STRING FED TO THE LLM BACKBONE:")
+                print("="*80)
+                print(f"Schema Used: {self.data_args.conv_version}")
+                print(f"Raw String : {decoded_prompt.encode('unicode_escape').decode('utf-8')}")
+                print("="*80 + "\n")
+            except Exception as e:
+                print(f"[VoQA MONITOR] Warning: could not decode debug prompt: {e}")
 
         if self.data_args.conv_version == 'pretrain':
             if 'image' in sources:
